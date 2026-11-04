@@ -1,0 +1,57 @@
+# Hesper Remote — publish the in-app update manifests to the `updates` branch.
+#
+# The updater (hbb_common::version_check_request) GETs
+#   https://raw.githubusercontent.com/<repo>/updates/<os>-<arch>.json
+# for the running platform. This job regenerates those manifests to point at the
+# just-published release's assets, via scripts/publish-update-manifest.sh.
+#
+# NOT a gate: it runs AFTER a release is published and never blocks a build,
+# merge or release. Fires on every release/prerelease publish (idempotent — the
+# script no-ops when the manifests already match), and can be run by hand.
+name: publish-update-manifest
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish manifests for (e.g. 1.5.32)"
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-manifest
+  cancel-in-progress: false
+
+jobs:
+  manifest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Publish update manifests
+        env:
+          GH_TAG: ${{ github.event.release.tag_name }}
+          DISPATCH_VERSION: ${{ github.event.inputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Version: the manual input, else strip the platform prefix off the tag
+          # (linux-v / win-v / v) to the bare dotted-numeric version.
+          if [ -n "${DISPATCH_VERSION:-}" ]; then
+            V="$DISPATCH_VERSION"
+          else
+            V="${GH_TAG#linux-v}"; V="${V#win-v}"; V="${V#v}"
+          fi
+          echo "tag=${GH_TAG:-<none>} input=${DISPATCH_VERSION:-<none>} -> version=$V"
+          case "$V" in
+            [0-9]*.[0-9]*) : ;;
+            *) echo "::notice::'$V' is not a version release; skipping"; exit 0 ;;
+          esac
+          # Let the script's https clone/push to the `updates` branch use the token.
+          git config --global url."https://x-access-token:${GH_TOKEN}@github.com/".insteadOf "https://github.com/"
+          bash scripts/publish-update-manifest.sh "$V"
