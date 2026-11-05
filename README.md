@@ -1,6 +1,6 @@
 # Hesper Remote — auto-update manifests
 
-Latest: **1.5.32**
+Latest: **1.5.33**
 
 Each `<os>-<arch>.json` is `{"url":"<latest release asset>"}`, fetched by the
 in-app updater (`hbb_common::version_check_request`) for the running platform.
