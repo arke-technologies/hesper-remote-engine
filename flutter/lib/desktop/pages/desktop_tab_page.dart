@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hbb/common.dart';
+import 'package:flutter_hbb/common/hesper_relays.dart';
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_setting_page.dart';
@@ -127,19 +128,31 @@ class _DesktopTabPageState extends State<DesktopTabPage> {
   }
 }
 
-// Hesper Remote: top-right window-chrome status pill. A small green dot + text
-// "Ready · Hesper Relay (ZA)" on a pale-violet pill (hard corners). The dot colour
-// and the leading status word track the real service status
-// (stateGlobal.svcStatus), so the pill reads as a live health indicator.
-class _HesperStatusPill extends StatelessWidget {
+// Hesper Remote: top-right window-chrome status pill AND relay switcher. A small
+// status dot + "Ready · <relay>" on a pale-violet pill (hard corners). The dot
+// colour + leading word track the live service status (stateGlobal.svcStatus).
+// Tapping the pill opens a menu of the relays in `kHesperRelays`; choosing a relay
+// outside the home jurisdiction (ZA) raises a data-sovereignty consent first. The
+// chosen relay persists via the `custom-rendezvous-server` option.
+class _HesperStatusPill extends StatefulWidget {
   const _HesperStatusPill();
 
+  @override
+  State<_HesperStatusPill> createState() => _HesperStatusPillState();
+}
+
+class _HesperStatusPillState extends State<_HesperStatusPill> {
   static const Color _green = kHesperBrand;
   static const Color _warn = Color(0xFFE0A312);
-  static const String _relayLabel = 'Hesper Relay (ZA)';
+
+  Future<void> _onSelect(HesperRelay relay) async {
+    final changed = await switchHesperRelay(gFFI.dialogManager, relay);
+    if (changed && mounted) setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
+    final current = currentHesperRelay();
     return Obx(() {
       final status = stateGlobal.svcStatus.value;
       final bool ready = status == SvcStatus.ready;
@@ -152,50 +165,63 @@ class _HesperStatusPill extends StatelessWidget {
           : (connecting
               ? translate('connecting_status')
               : translate('not_ready_status'));
-      // Theme-aware pill: pale-violet wash + ink text in light mode; a
-      // translucent-green wash + light ink in dark mode so it reads on the
-      // dark titlebar instead of a white block.
       final Color pillBg = hesperBrandPale(context);
       final Color pillInk = hesperInkBody(context);
-      // Constrain the label so it can NEVER overflow the titlebar / overlap the
-      // window controls: it sizes to content but ellipsises past a sane cap,
-      // and the pill keeps a right margin so there is a clear gap before the
-      // min/max/close buttons that follow it in the tail Row.
-      return Container(
-        // No vertical margin: the tab bar is a hard 28px (kDesktopRemoteTabBarHeight),
-        // so top/bottom margin pushed the pill's box past it and clipped its
-        // rounded ends. The Row centres the ~24px pill in the 28px bar instead.
-        margin: const EdgeInsets.only(left: 8, right: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: pillBg,
-          borderRadius: BorderRadius.circular(0),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 7,
-              height: 7,
-              margin: const EdgeInsets.only(right: 7),
-              decoration: BoxDecoration(shape: BoxShape.circle, color: dot),
-            ),
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 200),
-              child: Text(
-                '$statusWord · $_relayLabel',
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: kHesperBodyFont,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w500,
-                  color: pillInk,
+      return PopupMenuButton<HesperRelay>(
+        tooltip: 'Switch relay',
+        position: PopupMenuPosition.under,
+        onSelected: _onSelect,
+        itemBuilder: (context) => kHesperRelays
+            .map((r) => PopupMenuItem<HesperRelay>(
+                  value: r,
+                  child: Row(
+                    children: [
+                      Icon(r.id == current.id ? Icons.check : Icons.public,
+                          size: 16, color: pillInk),
+                      const SizedBox(width: 8),
+                      Text(r.label),
+                      if (r.region != kHesperHomeRegion) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.flight_takeoff, size: 13, color: _warn),
+                      ],
+                    ],
+                  ),
+                ))
+            .toList(),
+        child: Container(
+          margin: const EdgeInsets.only(left: 8, right: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: pillBg,
+            borderRadius: BorderRadius.circular(0),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.only(right: 7),
+                decoration: BoxDecoration(shape: BoxShape.circle, color: dot),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 200),
+                child: Text(
+                  '$statusWord · ${current.label}',
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: kHesperBodyFont,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: pillInk,
+                  ),
                 ),
               ),
-            ),
-          ],
+              Icon(Icons.arrow_drop_down, size: 16, color: pillInk),
+            ],
+          ),
         ),
       );
     });
