@@ -1,15 +1,16 @@
-Name:       rustdesk
+Name:       hesper-remote-engine
 Version:    1.1.9
 Release:    0
-Summary:    RPM package
+Summary:    Hesper Remote Engine
 License:    GPL-3.0
 Requires:   gtk3 libxcb1 libXfixes3 alsa-utils libXtst6 libva2 pam gstreamer-plugins-base gstreamer-plugin-pipewire
 Recommends: libayatana-appindicator3-1 xdotool
+Conflicts:  rustdesk, hesper-remote
 
 # https://docs.fedoraproject.org/en-US/packaging-guidelines/Scriptlets/
 
 %description
-The best open-source remote desktop client software, written in Rust.
+Hesper Remote - secure remote desktop and support engine.
 
 %prep
 # we have no source, so nothing here
@@ -21,26 +22,26 @@ The best open-source remote desktop client software, written in Rust.
 
 %install
 mkdir -p %{buildroot}/usr/bin/
-mkdir -p %{buildroot}/usr/share/rustdesk/
-mkdir -p %{buildroot}/usr/share/rustdesk/files/
+mkdir -p %{buildroot}/usr/share/hesper-remote-engine/
+mkdir -p %{buildroot}/usr/share/hesper-remote-engine/files/
 mkdir -p %{buildroot}/usr/share/icons/hicolor/256x256/apps/
 mkdir -p %{buildroot}/usr/share/icons/hicolor/scalable/apps/
-install -m 755 $HBB/target/release/rustdesk %{buildroot}/usr/bin/rustdesk
-install $HBB/libsciter-gtk.so %{buildroot}/usr/share/rustdesk/libsciter-gtk.so
-install $HBB/res/rustdesk.service %{buildroot}/usr/share/rustdesk/files/
-install $HBB/res/128x128@2x.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/rustdesk.png
-install $HBB/res/scalable.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/rustdesk.svg
-install $HBB/res/rustdesk.desktop %{buildroot}/usr/share/rustdesk/files/
-install $HBB/res/rustdesk-link.desktop %{buildroot}/usr/share/rustdesk/files/
+install -m 755 $HBB/target/release/rustdesk %{buildroot}/usr/bin/hesper-remote-engine
+install $HBB/libsciter-gtk.so %{buildroot}/usr/share/hesper-remote-engine/libsciter-gtk.so
+install $HBB/res/hesper-remote-engine.service %{buildroot}/usr/share/hesper-remote-engine/files/
+install $HBB/res/128x128@2x.png %{buildroot}/usr/share/icons/hicolor/256x256/apps/hesper-remote-engine.png
+install $HBB/res/scalable.svg %{buildroot}/usr/share/icons/hicolor/scalable/apps/hesper-remote-engine.svg
+install $HBB/res/hesper-remote-engine.desktop %{buildroot}/usr/share/hesper-remote-engine/files/
+install $HBB/res/hesper-remote-engine-link.desktop %{buildroot}/usr/share/hesper-remote-engine/files/
 
 %files
-/usr/bin/rustdesk
-/usr/share/rustdesk/libsciter-gtk.so
-/usr/share/rustdesk/files/rustdesk.service
-/usr/share/icons/hicolor/256x256/apps/rustdesk.png
-/usr/share/icons/hicolor/scalable/apps/rustdesk.svg
-/usr/share/rustdesk/files/rustdesk.desktop
-/usr/share/rustdesk/files/rustdesk-link.desktop
+/usr/bin/hesper-remote-engine
+/usr/share/hesper-remote-engine/libsciter-gtk.so
+/usr/share/hesper-remote-engine/files/hesper-remote-engine.service
+/usr/share/icons/hicolor/256x256/apps/hesper-remote-engine.png
+/usr/share/icons/hicolor/scalable/apps/hesper-remote-engine.svg
+/usr/share/hesper-remote-engine/files/hesper-remote-engine.desktop
+/usr/share/hesper-remote-engine/files/hesper-remote-engine-link.desktop
 
 %changelog
 # let's skip this for now
@@ -53,26 +54,26 @@ case "$1" in
   ;;
   2)
     # for upgrade
-    systemctl stop rustdesk || true
+    systemctl stop hesper-remote-engine || true
   ;;
 esac
 
 %post
-cp /usr/share/rustdesk/files/rustdesk.service /etc/systemd/system/rustdesk.service
-cp /usr/share/rustdesk/files/rustdesk.desktop /usr/share/applications/
-cp /usr/share/rustdesk/files/rustdesk-link.desktop /usr/share/applications/
+cp /usr/share/hesper-remote-engine/files/hesper-remote-engine.service /etc/systemd/system/hesper-remote-engine.service
+cp /usr/share/hesper-remote-engine/files/hesper-remote-engine.desktop /usr/share/applications/
+cp /usr/share/hesper-remote-engine/files/hesper-remote-engine-link.desktop /usr/share/applications/
 systemctl daemon-reload
-systemctl enable rustdesk
-systemctl start rustdesk
+systemctl enable hesper-remote-engine
+systemctl start hesper-remote-engine
 update-desktop-database
 
 %preun
 case "$1" in
   0)
     # for uninstall
-    systemctl stop rustdesk || true
-    systemctl disable rustdesk || true
-    rm /etc/systemd/system/rustdesk.service || true
+    systemctl stop hesper-remote-engine || true
+    systemctl disable hesper-remote-engine || true
+    rm /etc/systemd/system/hesper-remote-engine.service || true
   ;;
   1)
     # for upgrade
@@ -83,8 +84,8 @@ esac
 case "$1" in
   0)
     # for uninstall
-    rm /usr/share/applications/rustdesk.desktop || true
-    rm /usr/share/applications/rustdesk-link.desktop || true
+    rm /usr/share/applications/hesper-remote-engine.desktop || true
+    rm /usr/share/applications/hesper-remote-engine-link.desktop || true
     update-desktop-database
   ;;
   1)

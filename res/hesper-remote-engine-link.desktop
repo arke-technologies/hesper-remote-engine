@@ -2,10 +2,10 @@
 Name=Hesper Remote
 NoDisplay=true
 MimeType=x-scheme-handler/hesperremote;x-scheme-handler/rustdesk;
-TryExec=rustdesk
-Exec=rustdesk %u
-Icon=rustdesk
+TryExec=hesper-remote-engine
+Exec=hesper-remote-engine %u
+Icon=hesper-remote-engine
 Terminal=false
 Type=Application
 StartupNotify=false
-StartupWMClass=rustdesk
+StartupWMClass=hesper-remote-engine

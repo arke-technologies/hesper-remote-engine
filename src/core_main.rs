@@ -171,7 +171,8 @@ pub fn core_main() -> Option<Vec<String>> {
     // linux uni (url) go here.
     // Accept both the brand `hesperremote://` prefix and the legacy `rustdesk://`
     // one (back-compat) so a deep link minted by any build is forwarded to the
-    // running instance over D-Bus.
+    // running instance over D-Bus. Registration matches: the packaged handler is
+    // res/hesper-remote-engine-link.desktop, which claims both schemes.
     #[cfg(all(target_os = "linux", feature = "flutter"))]
     if args.len() > 0 && crate::starts_with_uri_prefix(&args[0]) {
         return try_send_by_dbus(args[0].clone());
@@ -407,7 +408,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(crate::platform::check_autostart_config());
                 std::process::Command::new("pkill")
                     .arg("-f")
-                    .arg(&format!("{} --tray", crate::get_app_name().to_lowercase()))
+                    .arg(&format!("{} --tray", crate::get_linux_engine_name()))
                     .status()
                     .ok();
                 hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
