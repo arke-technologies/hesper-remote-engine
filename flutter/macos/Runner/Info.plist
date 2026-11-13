@@ -33,6 +33,10 @@
 				<!-- Legacy scheme kept for back-compat: deep links / QR codes minted
 				     by builds up to 1.5.33 carry rustdesk://; the engine still parses it. -->
 				<string>rustdesk</string>
+				<!-- Additional aliases claimed by this branch. The Hesper hub emits
+				     hesperremote:// today; these are additive and cost nothing. -->
+				<string>hesper</string>
+				<string>atlasremote</string>
 			</array>
 		</dict>
 	</array>
