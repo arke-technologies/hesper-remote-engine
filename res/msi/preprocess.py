@@ -85,7 +85,7 @@ def make_parser():
         "-m",
         "--manufacturer",
         type=str,
-        default="Spout Technologies",
+        default="Arke Technologies",
         help="The app manufacturer.",
     )
     return parser
