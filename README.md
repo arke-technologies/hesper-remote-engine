@@ -2,7 +2,7 @@
 
 **Hesper Remote** is the owned, Hesper-branded remote-control engine for Hesper OS
 (https://hesper.work) — a fork of RustDesk (https://github.com/rustdesk/rustdesk,
-AGPL-3.0), rebranded and pointed at Spout Technologies' self-hosted relay.
+AGPL-3.0), rebranded and pointed at Arke Technologies' self-hosted relay.
 
 It is the standalone engine that the Hesper Local Agent supervises **at arm's
 length** (fork/exec — zero linkage) for governed remote-support sessions.
