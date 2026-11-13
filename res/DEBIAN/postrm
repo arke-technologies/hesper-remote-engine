@@ -4,7 +4,9 @@ set -e
 
 case $1 in
     purge)
-		rm -rf /root/.config/rustdesk || true
+		# Config for this fork lives under the display name (APP_NAME="Hesper Remote");
+		# the legacy upstream `rustdesk` dir is cleared too for in-place upgrades.
+		rm -rf "/root/.config/Hesper Remote" /root/.config/rustdesk || true
         ;;
 esac
 

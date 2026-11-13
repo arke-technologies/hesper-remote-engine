@@ -2,18 +2,18 @@
 Name=Hesper Remote
 GenericName=Remote Desktop
 Comment=Remote Desktop
-Exec=rustdesk %u
-Icon=rustdesk
+Exec=hesper-remote-engine %u
+Icon=hesper-remote-engine
 Terminal=false
 Type=Application
 StartupNotify=true
 Categories=Network;RemoteAccess;GTK;
-Keywords=internet;linux;dart;rust;remote-control;p2p;teamviewer;rust-lang;rdp;remote-desktop;vnc;
+Keywords=remote-desktop;remote-control;remote-access;remote-support;rdp;vnc;
 Actions=new-window;
-StartupWMClass=rustdesk
+StartupWMClass=hesper-remote-engine
 
 X-Desktop-File-Install-Version=0.23
 
 [Desktop Action new-window]
 Name=Open a New Window
-Exec=rustdesk %u
+Exec=hesper-remote-engine %u
