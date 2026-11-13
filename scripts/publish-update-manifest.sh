@@ -17,7 +17,7 @@
 set -euo pipefail
 
 V="${1:?usage: $(basename "$0") <version>   e.g. 1.5.32}"
-REPO="${HESPER_REPO:-spout-technologies/hesper-remote-engine}"
+REPO="${HESPER_REPO:-arke-technologies/hesper-remote-engine}"
 BASE="https://github.com/${REPO}/releases/download"
 
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
