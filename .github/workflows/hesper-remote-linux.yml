@@ -112,7 +112,7 @@ jobs:
 
       - name: Collect .deb (required)
         run: |
-          DEB="$(find . -maxdepth 3 -name 'rustdesk-*.deb' -o -maxdepth 3 -name 'rustdesk.deb' | head -1)"
+          DEB="$(find . -maxdepth 3 -name 'hesper-remote-engine-*.deb' -o -maxdepth 3 -name 'hesper-remote-engine.deb' | head -1)"
           [ -n "$DEB" ] || { echo "::error::no .deb produced by build.py"; find . -name '*.deb'; exit 1; }
           OUT="HesperRemote-${VERSION}-x86_64.deb"
           mv "$DEB" "$OUT"
@@ -124,10 +124,9 @@ jobs:
         run: |
           pip3 install --user appimage-builder==1.1.0 || pip3 install --user appimage-builder
           export PATH="$HOME/.local/bin:$PATH"
-          # appimage-builder reads ./rustdesk.deb and res/*.png|scalable.svg (Hesper icons).
-          cp "HesperRemote-${VERSION}-x86_64.deb" appimage/rustdesk.deb
-          sed -i -e "s/^    name: rustdesk/    name: Hesper Remote/" \
-                 -e "s/^    version: .*/    version: ${VERSION}/" appimage/AppImageBuilder-x86_64.yml
+          # appimage-builder reads ./hesper-remote-engine.deb and res/*.png|scalable.svg (Hesper icons).
+          cp "HesperRemote-${VERSION}-x86_64.deb" appimage/hesper-remote-engine.deb
+          sed -i -e "s/^    version: .*/    version: ${VERSION}/" appimage/AppImageBuilder-x86_64.yml
           cd appimage
           APPIMAGE_EXTRACT_AND_RUN=1 appimage-builder --recipe AppImageBuilder-x86_64.yml --skip-test
           IMG="$(find . -maxdepth 1 -name '*.AppImage' | head -1)"

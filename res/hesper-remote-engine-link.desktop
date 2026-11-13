@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Hesper Remote
+NoDisplay=true
+MimeType=x-scheme-handler/hesper;x-scheme-handler/atlasremote;
+TryExec=hesper-remote-engine
+Exec=hesper-remote-engine %u
+Icon=hesper-remote-engine
+Terminal=false
+Type=Application
+StartupNotify=false
+StartupWMClass=hesper-remote-engine

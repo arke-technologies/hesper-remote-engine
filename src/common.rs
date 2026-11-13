@@ -1082,6 +1082,41 @@ pub fn get_uri_prefix() -> String {
     format!("{}://", get_app_name().to_lowercase().replace(' ', ""))
 }
 
+/// The single-token on-disk / process identity of the Linux engine — the name
+/// the `.deb`/`.rpm`/AppImage install as, distinct from the display name
+/// (`APP_NAME` = "Hesper Remote", shown in the UI). Deriving the Linux identity
+/// from `get_app_name().to_lowercase()` yields "hesper remote" (with a space),
+/// which is not a valid single-token binary/service/path name — so the on-disk
+/// identity is pinned here instead.
+///
+/// This is what the packaging ships: `/usr/bin/hesper-remote-engine`,
+/// `/usr/share/hesper-remote-engine/`, `/etc/hesper-remote-engine/`, the
+/// `hesper-remote-engine.service` unit, the `hesper-remote-engine.desktop` id /
+/// `StartupWMClass`, and the PAM service `/etc/pam.d/hesper-remote-engine`. It
+/// is also the binary name the Hesper Go agent launches (`engineBinaryName()`),
+/// so the two MUST agree. Keep in sync with build.py, res/*.desktop,
+/// res/*.service, res/rpm-flutter*.spec and appimage/AppImageBuilder-*.yml.
+#[cfg(target_os = "linux")]
+pub fn get_linux_engine_name() -> String {
+    "hesper-remote-engine".to_string()
+}
+
+/// Incoming deep-link scheme prefixes the Linux engine claims in its `.desktop`
+/// handler (`x-scheme-handler/hesper` + `x-scheme-handler/atlasremote`) in
+/// addition to the APP_NAME-derived [`get_uri_prefix`] ("hesperremote://"). The
+/// Hesper hub emits `atlasremote://` today and will add `hesper://`; both
+/// resolve to this client. Keep in sync with res/hesper-remote-engine-link.desktop.
+#[cfg(target_os = "linux")]
+pub const LINUX_EXTRA_URI_SCHEMES: &[&str] = &["hesper://", "atlasremote://"];
+
+/// True when `arg` is an incoming deep link this Linux client should route to a
+/// running instance — the APP_NAME-derived scheme or one of the hub schemes.
+#[cfg(target_os = "linux")]
+pub fn is_linux_uri_scheme_arg(arg: &str) -> bool {
+    arg.starts_with(&get_uri_prefix())
+        || LINUX_EXTRA_URI_SCHEMES.iter().any(|p| arg.starts_with(p))
+}
+
 #[cfg(target_os = "macos")]
 pub fn get_full_name() -> String {
     format!(
