@@ -30,6 +30,8 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hesperremote</string>
+				<string>hesper</string>
+				<string>atlasremote</string>
 			</array>
 		</dict>
 	</array>
