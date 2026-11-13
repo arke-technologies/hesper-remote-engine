@@ -2659,7 +2659,7 @@ class _AboutState extends State<_About> {
               Align(
                 alignment: Alignment.centerLeft,
                 child: aboutLink('View Source',
-                        'https://github.com/spout-technologies/hesper-remote-engine',
+                        'https://github.com/arke-technologies/hesper-remote-engine',
                         fontSize: 12)
                     .marginOnly(top: 6, left: -6),
               ),
