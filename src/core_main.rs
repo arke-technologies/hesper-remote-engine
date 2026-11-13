@@ -168,9 +168,10 @@ pub fn core_main() -> Option<Vec<String>> {
         return run_hesper_headless(hesper_args);
     }
 
-    // linux uni (url) go here.
+    // linux uni (url) go here. Claim the APP_NAME-derived scheme plus the hub's
+    // hesper:// / atlasremote:// deep links (see res/hesper-remote-engine-link.desktop).
     #[cfg(all(target_os = "linux", feature = "flutter"))]
-    if args.len() > 0 && args[0].starts_with(&crate::get_uri_prefix()) {
+    if args.len() > 0 && crate::is_linux_uri_scheme_arg(&args[0]) {
         return try_send_by_dbus(args[0].clone());
     }
 
@@ -404,7 +405,7 @@ pub fn core_main() -> Option<Vec<String>> {
                 hbb_common::allow_err!(crate::platform::check_autostart_config());
                 std::process::Command::new("pkill")
                     .arg("-f")
-                    .arg(&format!("{} --tray", crate::get_app_name().to_lowercase()))
+                    .arg(&format!("{} --tray", crate::get_linux_engine_name()))
                     .status()
                     .ok();
                 hbb_common::allow_err!(crate::run_me(vec!["--tray"]));
