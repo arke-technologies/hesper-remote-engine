@@ -3955,7 +3955,12 @@ Future<String?> _resolveLogoAsset(Brightness brightness) async {
 }
 
 class _Logo extends StatefulWidget {
-  const _Logo();
+  const _Logo({this.height});
+
+  /// When set, the wordmark renders margin-free and fills this exact height
+  /// (used by the sign-in card). When null the default framed/margined
+  /// rendering is kept for the desktop-home and mobile-settings call sites.
+  final double? height;
 
   @override
   State<_Logo> createState() => _LogoState();
@@ -3983,6 +3988,12 @@ class _LogoState extends State<_Logo> {
             fit: BoxFit.contain,
             placeholderBuilder: (ctx) => Container(),
           );
+          // A caller-supplied height (the sign-in card) renders the wordmark
+          // margin-free so it fills the given height exactly — the shared
+          // 12px margin below otherwise swallows half of a small slot.
+          if (widget.height != null) {
+            return SizedBox(height: widget.height, child: image);
+          }
           return Container(
             constraints: BoxConstraints(maxWidth: 300, maxHeight: 60),
             child: image,
@@ -3994,8 +4005,8 @@ class _LogoState extends State<_Logo> {
   }
 }
 
-// max 300 x 60
-Widget loadLogo() => const _Logo();
+// max 300 x 60 (framed). Pass `height` for a margin-free fill of that height.
+Widget loadLogo({double? height}) => _Logo(height: height);
 
 Widget loadIcon(double size) {
   return Image.asset('assets/icon.png',

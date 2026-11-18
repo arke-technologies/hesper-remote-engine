@@ -1176,7 +1176,7 @@ pub fn get_api_server(api: String, custom: String) -> String {
 /// the rendezvous host (as upstream RustDesk Pro does, assuming both are
 /// colocated) is wrong for this fork's split-host architecture, so that
 /// derivation is not attempted here.
-pub const HESPER_API_SERVER_DEFAULT: &str = "https://dash.hesper.work";
+pub const HESPER_API_SERVER_DEFAULT: &str = "https://dash.hesperitsm.com";
 
 fn get_api_server_(api: String, _custom: String) -> String {
     #[cfg(windows)]

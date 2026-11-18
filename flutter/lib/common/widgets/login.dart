@@ -610,11 +610,9 @@ class LoginWidgetUserPass extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           // ── Brand + heading (centred) ──
-          // Design: <img> height:24px; margin:0 auto 18px.
-          SizedBox(
-            height: 24,
-            child: Center(child: loadLogo()),
-          ),
+          // Design: wordmark 48px tall (2x, TK "logo so small") rendered
+          // margin-free so it fills the height; margin:0 auto 18px.
+          Center(child: loadLogo(height: 48)),
           const SizedBox(height: 18),
           Text(
             translate('Sign in to Hesper'),
