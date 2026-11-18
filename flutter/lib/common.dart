@@ -2678,9 +2678,17 @@ bool isFleetDeviceId(String id) => _fleetDeviceIdPattern.hasMatch(id);
 Future<void> openGovernedDeviceConnect(String deviceId) async {
   final apiServer = await bind.mainGetApiServer();
   if (apiServer.isEmpty) return;
-  final uri = Uri.parse(apiServer).replace(
+  final httpsUri = Uri.parse(apiServer).replace(
       path: '/', queryParameters: {'device': deviceId});
-  await launchUrl(uri);
+  // Prefer the INSTALLED Hesper PWA via its registered protocol handler
+  // (manifest protocol_handlers: web+hesper -> /?device=%s), so double-clicking
+  // a fleet peer opens the app rather than a stray browser tab. Fall back to the
+  // default browser when the PWA is not installed / no OS handler is registered.
+  final pwaUri = Uri.parse('web+hesper://$deviceId');
+  try {
+    if (await canLaunchUrl(pwaUri) && await launchUrl(pwaUri)) return;
+  } catch (_) {}
+  await launchUrl(httpsUri);
 }
 
 connectMainDesktop(String id,
