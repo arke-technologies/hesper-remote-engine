@@ -480,6 +480,51 @@ pub fn core_main() -> Option<Vec<String>> {
                 }
             }
             return None;
+        } else if args[0] == "--set-managed-password" {
+            // Phase 4 (Hesper Remote durable fleet dial): apply the hub-issued
+            // MANAGED permanent password to the running (installed) engine daemon so
+            // a controller dialling the address book's saved password is admitted
+            // unattended. Unlike `--set-session-otp` (the per-session TEMPORARY
+            // password), this is the STANDING credential — it persists and switches
+            // the daemon to `password` approve-mode with permanent-password
+            // verification, mirroring the field-proven headless provisioning
+            // (`run_hesper_headless`) but as the durable, not per-session, credential.
+            // An EMPTY value reverts to the stock consent posture (rotation / revoke).
+            // The password is a secret: it arrives as a CLI arg (install+root only,
+            // like `--password`) and is NEVER logged or echoed.
+            if is_cli_setting_change_disabled() {
+                println!("Settings are disabled!");
+                return None;
+            }
+            if config::Config::is_disable_change_permanent_password() {
+                println!("Changing permanent password is disabled!");
+                return None;
+            }
+            if args.len() == 2 {
+                if crate::platform::is_installed() && is_root() {
+                    let managed = args[1].to_owned();
+                    let revoke = managed.is_empty();
+                    if let Err(err) = crate::ipc::set_permanent_password(managed) {
+                        println!("{err}");
+                        return None;
+                    }
+                    if revoke {
+                        // Clear the standing credential and restore the stock
+                        // verification-method + approve-mode (empty reads back as the
+                        // defaults UseBothPasswords / Both), returning the device to
+                        // the governed consent/OTP path kept for non-managed devices.
+                        crate::ipc::set_option("verification-method", "");
+                        crate::ipc::set_option("approve-mode", "");
+                    } else {
+                        crate::ipc::set_option("verification-method", "use-permanent-password");
+                        crate::ipc::set_option("approve-mode", "password");
+                    }
+                    println!("Done!");
+                } else {
+                    println!("Installation and administrative privileges required!");
+                }
+            }
+            return None;
         } else if args[0] == "--set-unlock-pin" {
             if config::Config::is_disable_unlock_pin() {
                 println!("Unlock PIN is disabled!");
@@ -964,6 +1009,9 @@ fn is_user_main_ipc_scope_cli_command(args: &[String]) -> bool {
             // A5.1: OTP injection targets the running user `--server` main IPC, so
             // (like `--password`) it must route through the user main IPC scope.
             | Some("--set-session-otp")
+            // Phase 4: the managed (durable) permanent-password application targets
+            // the same running daemon IPC as `--password`/`--set-session-otp`.
+            | Some("--set-managed-password")
     )
 }
 
@@ -1265,7 +1313,8 @@ mod tests {
             "--option",
             "--assign",
             "--deploy",
-            "--set-session-otp", // A5.1
+            "--set-session-otp",      // A5.1
+            "--set-managed-password", // Phase 4
         ] {
             assert!(is_user_main_ipc_scope_cli_command(&args(&[command])));
         }
