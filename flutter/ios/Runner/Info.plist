@@ -35,6 +35,8 @@
 			<string>com.carriez.rustdesk</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
+				<string>hesperremote</string>
+				<!-- Legacy scheme kept for back-compat with links/QR codes from builds <= 1.5.33. -->
 				<string>rustdesk</string>
 			</array>
 		</dict>

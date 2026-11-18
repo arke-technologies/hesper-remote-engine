@@ -1499,6 +1499,25 @@ fn get_after_install(
 ) -> String {
     let app_name = crate::get_app_name();
     let ext = app_name.to_lowercase().replace(' ', "");
+    // Back-compat: also register the legacy `rustdesk://` URL scheme (deep links
+    // and QR codes minted by builds <= 1.5.33 carry it) so the OS still routes
+    // them to this exe. Points at the same `{exe} "%1"` handler as the brand
+    // scheme. Skipped when the brand prefix already *is* the legacy one (stock
+    // RustDesk), to avoid writing the same keys twice.
+    let legacy_scheme = crate::LEGACY_URI_SCHEME;
+    let legacy_url_scheme = if ext != legacy_scheme {
+        format!(
+            "
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme} /f
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme} /f /v \"URL Protocol\" /t REG_SZ /d \"\"
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme}\\shell /f
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme}\\shell\\open /f
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme}\\shell\\open\\command /f
+    reg add HKEY_CLASSES_ROOT\\{legacy_scheme}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{exe}\\\" \\\"%%1\\\"\""
+        )
+    } else {
+        String::new()
+    };
 
     // reg delete HKEY_CURRENT_USER\Software\Classes for
     // https://github.com/rustdesk/rustdesk/commit/f4bdfb6936ae4804fc8ab1cf560db192622ad01a
@@ -1544,7 +1563,7 @@ fn get_after_install(
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open /f
     reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f
-    reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{exe}\\\" \\\"%%1\\\"\"
+    reg add HKEY_CLASSES_ROOT\\{ext}\\shell\\open\\command /f /ve /t REG_SZ /d \"\\\"{exe}\\\" \\\"%%1\\\"\"{legacy_url_scheme}
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=out action=allow program=\"{exe}\" enable=yes
     netsh advfirewall firewall add rule name=\"{app_name} Service\" dir=in action=allow program=\"{exe}\" enable=yes
     {create_service}
@@ -1772,6 +1791,14 @@ fn get_before_uninstall(kill_self: bool) -> String {
     } else {
         format!(" /FI \"PID ne {}\"", get_current_pid())
     };
+    // Mirror get_after_install: also drop the legacy `rustdesk://` scheme key we
+    // registered for back-compat (no-op when the brand prefix is the legacy one).
+    let legacy_scheme = crate::LEGACY_URI_SCHEME;
+    let legacy_scheme_delete = if ext != legacy_scheme {
+        format!("\n    reg delete HKEY_CLASSES_ROOT\\{legacy_scheme} /f")
+    } else {
+        String::new()
+    };
     format!(
         "
     chcp 65001
@@ -1780,7 +1807,7 @@ fn get_before_uninstall(kill_self: bool) -> String {
     taskkill /F /IM {broker_exe}
     taskkill /F /IM \"{app_name}.exe\"{filter}
     reg delete HKEY_CLASSES_ROOT\\.{ext} /f
-    reg delete HKEY_CLASSES_ROOT\\{ext} /f
+    reg delete HKEY_CLASSES_ROOT\\{ext} /f{legacy_scheme_delete}
     netsh advfirewall firewall delete rule name=\"{app_name} Service\"
     ",
         broker_exe = WIN_TOPMOST_INJECTED_PROCESS_EXE,

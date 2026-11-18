@@ -30,6 +30,9 @@
 			<key>CFBundleURLSchemes</key>
 			<array>
 				<string>hesperremote</string>
+				<!-- Legacy scheme kept for back-compat: deep links / QR codes minted
+				     by builds up to 1.5.33 carry rustdesk://; the engine still parses it. -->
+				<string>rustdesk</string>
 			</array>
 		</dict>
 	</array>

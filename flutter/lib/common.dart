@@ -2314,13 +2314,34 @@ setEnvTerminalAdmin() {
   bind.mainSetEnv(key: 'IS_TERMINAL_ADMIN', value: 'Y');
 }
 
+/// Legacy URL scheme, kept accepted for back-compat. Builds up to 1.5.33
+/// registered `rustdesk://` only, so deep links / QR codes already in the wild
+/// still carry it. Keep in sync with `LEGACY_URI_SCHEME` in src/common.rs.
+const String kLegacyUriScheme = 'rustdesk';
+
+/// Every URL-scheme prefix this build accepts, brand prefix first. The brand
+/// prefix comes from the Rust core (`hesperremote://`); the legacy prefix is
+/// appended for back-compat (deduped when the two are the same).
+List<String> uriLinkPrefixes() {
+  final prefixes = <String>[bind.mainUriPrefixSync()];
+  final legacy = '$kLegacyUriScheme://';
+  if (!prefixes.contains(legacy)) {
+    prefixes.add(legacy);
+  }
+  return prefixes;
+}
+
+/// Whether [s] is one of our deep-link URLs (either accepted scheme).
+bool isKnownUriLink(String s) =>
+    uriLinkPrefixes().any((p) => s.startsWith(p));
+
 // uri link handler
 bool handleUriLink({List<String>? cmdArgs, Uri? uri, String? uriString}) {
   List<String>? args;
   if (cmdArgs != null && cmdArgs.isNotEmpty) {
     args = cmdArgs;
-    // rustdesk <uri link>
-    if (args[0].startsWith(bind.mainUriPrefixSync())) {
+    // <scheme>://<uri link> (hesperremote:// or legacy rustdesk://)
+    if (isKnownUriLink(args[0])) {
       final uri = Uri.tryParse(args[0]);
       if (uri != null) {
         args = urlLinkToCmdArgs(uri);

@@ -24,4 +24,13 @@ if [ "$1" = configure ]; then
 		systemctl enable rustdesk
 		systemctl start rustdesk
 	fi
+
+	# Refresh the desktop/MIME cache so the x-scheme-handler/{hesperremote,rustdesk}
+	# associations declared in rustdesk-link.desktop take effect at once. Without
+	# this the "Start session" deep link shows "No Apps Available" until some other
+	# event rebuilds the cache. Guarded + non-fatal so a missing tool never breaks
+	# the install (set -e is active).
+	if command -v update-desktop-database >/dev/null 2>&1; then
+		update-desktop-database -q /usr/share/applications || true
+	fi
 fi
