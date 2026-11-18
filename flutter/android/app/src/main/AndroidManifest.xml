@@ -76,6 +76,8 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="hesperremote" />
+                <!-- Legacy scheme kept for back-compat with links/QR codes from builds <= 1.5.33. -->
                 <data android:scheme="rustdesk" />
             </intent-filter>
         </activity>

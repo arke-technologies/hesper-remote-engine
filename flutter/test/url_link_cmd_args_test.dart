@@ -114,6 +114,43 @@ void main() {
     });
   });
 
+  group('urlLinkToCmdArgs — legacy rustdesk:// scheme (back-compat)', () {
+    // `urlLinkToCmdArgs` dispatches on authority/path/query only, never on the
+    // scheme, so a deep link minted by an older build (rustdesk://) must yield
+    // the SAME connect action — key, password, relay and the alt fallback chain
+    // included — as the brand hesperremote:// form. These pin that equivalence.
+    test('connect/<peer>?key=&password=&alt= parses identically to hesperremote://',
+        () {
+      const key = 'XU1zOo6SpZYfNGlsb3iMNRaEHEDYLsgEirPgI6VNt8c=';
+      const alt = 'eu.hesper.work:21116;KEY+EU/1=,za.hesper.work;KEYZA';
+      final suffix = 'connect/123456789@jhb.hesper.work:21116'
+          '?key=${Uri.encodeQueryComponent(key)}'
+          '&password=hunter2'
+          '&relay=jhb-relay.hesper.work'
+          '&alt=${Uri.encodeQueryComponent(alt)}';
+
+      final brand = urlLinkToCmdArgs(Uri.parse('hesperremote://$suffix'));
+      final legacy = urlLinkToCmdArgs(Uri.parse('rustdesk://$suffix'));
+
+      expect(legacy, isNotNull);
+      expect(legacy, equals(brand));
+      expect(legacy![0], '--connect');
+      expect(legacy[1], '123456789@jhb.hesper.work:21116?key=$key');
+      expect(legacy, contains('--relay'));
+      final i = legacy.indexOf('--alt-servers');
+      expect(i, greaterThan(0));
+      expect(legacy[i + 1], alt);
+    });
+
+    test('the bare legacy <id>/r@<server> form still parses and forces relay', () {
+      const key = 'KEY123';
+      final args = urlLinkToCmdArgs(
+          Uri.parse('rustdesk://123456789/r@jhb.hesper.work?key=$key'));
+      expect(args![0], '--connect');
+      expect(args[1], '123456789/r@jhb.hesper.work?key=$key');
+    });
+  });
+
   group('parseAltServers', () {
     test('parses an ordered host;key chain', () {
       final c = parseAltServers('eu.hesper.work:21116;KEYEU,za.hesper.work;KEYZA');

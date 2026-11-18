@@ -169,8 +169,11 @@ pub fn core_main() -> Option<Vec<String>> {
     }
 
     // linux uni (url) go here.
+    // Accept both the brand `hesperremote://` prefix and the legacy `rustdesk://`
+    // one (back-compat) so a deep link minted by any build is forwarded to the
+    // running instance over D-Bus.
     #[cfg(all(target_os = "linux", feature = "flutter"))]
-    if args.len() > 0 && args[0].starts_with(&crate::get_uri_prefix()) {
+    if args.len() > 0 && crate::starts_with_uri_prefix(&args[0]) {
         return try_send_by_dbus(args[0].clone());
     }
 
@@ -849,6 +852,17 @@ fn core_main_invoke_new_connection(mut args: std::env::Args) -> Option<Vec<Strin
             }
             "--relay" => {
                 param_array.push(format!("relay=true"));
+            }
+            // Ordered per-session rendezvous fallback chain (`host1;key1,host2;key2`),
+            // carried on the deep link as `?alt=…`. Preserve it when re-emitting the
+            // URI to the running instance so the relay fallback survives this path
+            // too (not just the direct URL path).
+            "--alt-servers" => {
+                if let Some(alt_servers) = args.next() {
+                    if !alt_servers.is_empty() {
+                        param_array.push(format!("alt={alt_servers}"));
+                    }
+                }
             }
             // inner
             "--switch_uuid" => {

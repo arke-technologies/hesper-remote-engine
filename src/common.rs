@@ -1082,6 +1082,41 @@ pub fn get_uri_prefix() -> String {
     format!("{}://", get_app_name().to_lowercase().replace(' ', ""))
 }
 
+/// Legacy URL scheme, kept registered and accepted for back-compat. Builds up to
+/// 1.5.33 shipped `rustdesk://` only; deep links and QR codes already minted by
+/// the hub / older clients still carry it, so the fork keeps honouring it
+/// everywhere it honours its own `hesperremote://` prefix. We never *emit* it.
+pub const LEGACY_URI_SCHEME: &str = "rustdesk";
+
+/// Every URL-scheme prefix this build accepts, brand prefix first.
+///
+/// Registration (OS handler) and parsing (runtime dispatch) both consult this so
+/// there is a single source of truth for "which schemes do we answer". When the
+/// app name is the stock "RustDesk" the two collapse to one entry (deduped).
+#[inline]
+pub fn get_uri_prefixes() -> Vec<String> {
+    let mut prefixes = vec![get_uri_prefix()];
+    let legacy = format!("{LEGACY_URI_SCHEME}://");
+    if !prefixes.contains(&legacy) {
+        prefixes.push(legacy);
+    }
+    prefixes
+}
+
+/// The accepted prefix `arg` begins with, if any (brand prefix wins ties).
+#[inline]
+pub fn match_uri_prefix(arg: &str) -> Option<String> {
+    get_uri_prefixes()
+        .into_iter()
+        .find(|p| arg.starts_with(p.as_str()))
+}
+
+/// Whether `arg` is one of our deep-link URLs (either accepted scheme).
+#[inline]
+pub fn starts_with_uri_prefix(arg: &str) -> bool {
+    match_uri_prefix(arg).is_some()
+}
+
 #[cfg(target_os = "macos")]
 pub fn get_full_name() -> String {
     format!(
@@ -2415,11 +2450,13 @@ pub fn read_custom_client(config: &str) {
 
 #[inline]
 pub fn is_empty_uni_link(arg: &str) -> bool {
-    let prefix = crate::get_uri_prefix();
-    if !arg.starts_with(&prefix) {
-        return false;
+    // Accept either scheme (`hesperremote://`, legacy `rustdesk://`) so an
+    // empty back-compat link still maps to "just focus the window", same as our
+    // own prefix.
+    match crate::match_uri_prefix(arg) {
+        Some(prefix) => arg[prefix.len()..].chars().all(|c| c == '/'),
+        None => false,
     }
-    arg[prefix.len()..].chars().all(|c| c == '/')
 }
 
 pub fn get_hwid() -> Bytes {
