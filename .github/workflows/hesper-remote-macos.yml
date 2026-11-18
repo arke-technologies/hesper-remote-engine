@@ -4,6 +4,19 @@
 #   APPLE_DEVELOPER_ID_APP_P12_BASE64 / _PASSWORD, ASC_API_KEY_ID / _ISSUER_ID /
 #   _KEY_P8_BASE64, KEYCHAIN_PASSWORD  (+ vars APPLE_TEAM_ID, MACOS_BUNDLE_ID).
 # The relay + name + icons are baked into the source (this fork), not env vars.
+#
+# Reliability notes (18 Nov 2026 incident, v1.5.34-36 all "cancelled"):
+#  * The aarch64 leg was cancelled in ~1s with ZERO steps: GitHub rejected its
+#    runner label ("The configuration 'macos-14-arm64-us-default' is not
+#    supported" -- macos-14 retired). That cancelled the whole run and, because
+#    publish needed every leg, skipped the publish of the healthy x86_64 DMG.
+#    aarch64 now runs on macos-15 (same image generation as the x86_64 leg).
+#  * Every long step has a timeout-minutes so a genuine hang fails in minutes,
+#    not at GitHub's 6h ceiling (which also surfaces as "cancelled").
+#  * Notarization is submit-then-poll with a hard deadline and retries
+#    (.github/scripts/macos-notarize.sh, unit-tested by test-macos-notarize.sh).
+#  * Publish no longer needs every arch: it ships whichever signed DMGs built
+#    (as a DRAFT) and raises a warning naming the missing arch.
 name: hesper-remote-macos
 
 permissions:
@@ -13,10 +26,10 @@ on:
   workflow_dispatch:
     inputs:
       arch:
-        description: "Target arch"
+        description: "Target arch (tag pushes always build both)"
         type: choice
-        default: aarch64
-        options: [aarch64, x86_64]
+        default: both
+        options: [both, aarch64, x86_64]
   push:
     tags: ["v*"]
 
@@ -36,17 +49,48 @@ jobs:
     uses: ./.github/workflows/bridge.yml
     secrets: inherit
 
+  # Single place that defines the arch matrix, so a manual dispatch can honour its
+  # `arch` input (it used to be ignored and always built both). Tags build both.
+  plan:
+    name: Select macOS arches
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      arches: ${{ steps.select.outputs.arches }}
+    steps:
+      - id: select
+        env:
+          WANT: ${{ github.event_name == 'workflow_dispatch' && inputs.arch || 'both' }}
+        run: |
+          # Each arch builds on its native GitHub-hosted runner (concurrently).
+          #   aarch64 -> macos-15       (Apple Silicon; macos-14 was retired -- see header)
+          #   x86_64  -> macos-15-intel (last Intel image)
+          # If GitHub retires one of these labels the leg is cancelled in ~1s with
+          # "The configuration '<label>-...' is not supported": bump the label here.
+          ALL='[
+            {"target":"aarch64-apple-darwin","os":"macos-15","arch":"aarch64","vcpkg-triplet":"arm64-osx","extra-build-args":"--screencapturekit"},
+            {"target":"x86_64-apple-darwin","os":"macos-15-intel","arch":"x86_64","vcpkg-triplet":"x64-osx","extra-build-args":"--screencapturekit"}
+          ]'
+          if [ "$WANT" = "both" ]; then
+            JOBS=$(jq -c . <<<"$ALL")
+          else
+            JOBS=$(jq -c --arg a "$WANT" 'map(select(.arch == $a))' <<<"$ALL")
+          fi
+          [ "$(jq length <<<"$JOBS")" -gt 0 ] || { echo "::error::no macOS leg matches arch '$WANT'"; exit 1; }
+          echo "matrix={\"job\":$JOBS}" >> "$GITHUB_OUTPUT"
+          echo "arches=$(jq -r 'map(.arch) | join(" ")' <<<"$JOBS")" >> "$GITHUB_OUTPUT"
+          echo "Building: $(jq -r 'map(.arch + " on " + .os) | join(", ")' <<<"$JOBS")"
+
   build-for-macOS:
     name: ${{ matrix.job.target }}
-    needs: [generate-bridge]
+    needs: [generate-bridge, plan]
+    # Measured (Nov 2026): x86_64 ~56 min end to end (vcpkg 13, build 34), aarch64 ~28 min.
+    # Queue time for the scarce Intel runner is NOT counted against this.
+    timeout-minutes: 120
     strategy:
-      fail-fast: false
-      matrix:
-        job:
-          # Both Mac arches, each on its native GitHub-hosted runner (concurrent).
-          # aarch64 -> macos-14 (Apple Silicon); x86_64 -> macos-13 (last Intel image).
-          - { target: aarch64-apple-darwin, os: macos-14, arch: aarch64, vcpkg-triplet: arm64-osx, extra-build-args: "--screencapturekit" }
-          - { target: x86_64-apple-darwin,  os: macos-15-intel, arch: x86_64,  vcpkg-triplet: x64-osx,   extra-build-args: "--screencapturekit" }
+      fail-fast: false # one arch failing must not cancel the other
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.job.os }}
     steps:
       - name: Export GitHub Actions cache environment variables
@@ -62,6 +106,7 @@ jobs:
           submodules: recursive
 
       - name: Import the Developer ID Application cert
+        timeout-minutes: 5
         uses: apple-actions/import-codesign-certs@v3
         with:
           p12-file-base64: ${{ secrets.APPLE_DEVELOPER_ID_APP_P12_BASE64 }}
@@ -83,11 +128,13 @@ jobs:
           echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey.p8" >> "$GITHUB_ENV"
 
       - name: Install build runtime
+        timeout-minutes: 20
         run: |
           brew install llvm create-dmg
           command -v pkg-config >/dev/null || brew install pkg-config
 
       - name: Install NASM 2.16.x
+        timeout-minutes: 10
         run: |
           wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
           unzip nasm-2.16.03-macosx.zip
@@ -95,6 +142,7 @@ jobs:
           nasm --version
 
       - name: Install Flutter
+        timeout-minutes: 15
         uses: subosito/flutter-action@v2
         with:
           channel: "stable"
@@ -111,6 +159,7 @@ jobs:
           sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
 
       - name: Install Rust toolchain
+        timeout-minutes: 15
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.MAC_RUST_VERSION }}
@@ -122,18 +171,21 @@ jobs:
           prefix-key: ${{ matrix.job.os }}
 
       - name: Restore bridge files
+        timeout-minutes: 10
         uses: actions/download-artifact@v4
         with:
           name: bridge-artifact
           path: ./
 
       - name: Setup vcpkg (binary cache)
+        timeout-minutes: 15
         uses: lukka/run-vcpkg@v11
         with:
           vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
           doNotCache: false
 
       - name: Install vcpkg dependencies
+        timeout-minutes: 60 # ~13 min typical; a cold cache on a new runner image can run longer
         run: |
           if ! $VCPKG_ROOT/vcpkg install --x-install-root="$VCPKG_ROOT/installed"; then
             find "${VCPKG_ROOT}/" -name "*.log" -exec sh -c 'echo "== {} =="; cat "{}"' \;
@@ -156,6 +208,7 @@ jobs:
           echo "guardrail OK: no const light-surface tokens in flutter/lib"
 
       - name: Build Hesper Remote (min-macOS 12.3, ${{ matrix.job.arch }})
+        timeout-minutes: 75 # ~34 min typical on Intel
         run: |
           # Both arches ship --screencapturekit, whose framework floor is macOS 12.3,
           # so pin the deployment target to 12.3 across all four build inputs (upstream default is 10.14).
@@ -182,6 +235,7 @@ jobs:
           ./build.py --flutter --hwcodec --unix-file-copy-paste ${{ matrix.job.extra-build-args }}
 
       - name: Codesign (hardened runtime) + signed DMG
+        timeout-minutes: 15 # ~1 min typical; create-dmg can hang on a Finder/unmount prompt
         run: |
           APP="./flutter/build/macos/Build/Products/Release/Hesper Remote.app"
           security default-keychain -s hesperremote.keychain
@@ -196,26 +250,14 @@ jobs:
           codesign --force --options runtime -s "$CODESIGN_IDENTITY" --deep --strict "HesperRemote-${VERSION}-${{ matrix.job.arch }}.dmg" -vvv
 
       - name: Notarize + staple (notarytool, ASC API key)
-        run: |
-          DMG="HesperRemote-${VERSION}-${{ matrix.job.arch }}.dmg"
-          xcrun notarytool submit "$DMG" \
-            --key "$ASC_KEY_PATH" \
-            --key-id "${{ secrets.ASC_API_KEY_ID }}" \
-            --issuer "${{ secrets.ASC_API_ISSUER_ID }}" --wait
-          # Stapler fetches the notarization ticket from Apple CloudKit and can hit a
-          # transient "network connection was lost" (NSURLErrorDomain -1005, Error 68)
-          # right after acceptance -- on BOTH staple AND validate. Retry the whole
-          # staple+validate as a unit with backoff, and fail only if every try fails.
-          ok=0
-          for i in 1 2 3 4 5 6; do
-            if xcrun stapler staple "$DMG" && xcrun stapler validate "$DMG"; then ok=1; break; fi
-            echo "staple/validate attempt $i failed (transient CloudKit ticket fetch?); retrying in 30s" >&2
-            sleep 30
-          done
-          [ "$ok" = 1 ] || { echo "::error::staple+validate failed after retries"; exit 1; }
-          shasum -a 256 "$DMG" > "$DMG.sha256"
+        timeout-minutes: 45 # script's own Apple-verdict deadline is 30 min; typical < 1 min
+        env:
+          ASC_KEY_ID: ${{ secrets.ASC_API_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_API_ISSUER_ID }}
+        run: bash .github/scripts/macos-notarize.sh "HesperRemote-${VERSION}-${{ matrix.job.arch }}.dmg"
 
       - name: Upload signed DMG (artifact)
+        timeout-minutes: 10
         uses: actions/upload-artifact@v4
         with:
           name: HesperRemote-macos-${{ matrix.job.arch }}
@@ -230,21 +272,47 @@ jobs:
 
   publish-macos-draft:
     name: Publish macOS DMGs as one draft release
-    needs: [build-for-macOS]
-    if: startsWith(github.ref, 'refs/tags/')
+    # Needs `plan` too, for the list of arches we expected. Runs when at least one leg
+    # built (even if the other failed) so a good DMG is never stranded by its sibling;
+    # `!cancelled()` still skips it when the whole run is cancelled by a human.
+    needs: [plan, build-for-macOS]
+    if: ${{ !cancelled() && startsWith(github.ref, 'refs/tags/') && needs.build-for-macOS.result != 'skipped' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - name: Download both-arch signed DMGs
+      - name: Download signed DMGs (whichever arches built)
         uses: actions/download-artifact@v4
         with:
           pattern: HesperRemote-macos-*
           merge-multiple: true
+
+      - name: Verify DMGs and report any missing arch
+        env:
+          EXPECTED_ARCHES: ${{ needs.plan.outputs.arches }}
+        run: |
+          shopt -s nullglob
+          dmgs=(HesperRemote-*.dmg)
+          if [ "${#dmgs[@]}" -eq 0 ]; then
+            echo "::error::No macOS DMG artifacts were produced -- every build leg failed. Nothing to publish."
+            exit 1
+          fi
+          sha256sum -c HesperRemote-*.dmg.sha256 # integrity after the artifact round-trip
+          missing=()
+          for arch in $EXPECTED_ARCHES; do
+            ls HesperRemote-*-"$arch".dmg >/dev/null 2>&1 || missing+=("$arch")
+          done
+          if [ "${#missing[@]}" -gt 0 ]; then
+            echo "::warning title=Partial macOS release::No signed DMG for: ${missing[*]}. Publishing the draft with only: ${dmgs[*]}. Fix the failed leg and re-run it, or release without that arch."
+          fi
+
       - name: Publish as a single DRAFT release
         uses: softprops/action-gh-release@v2
         with:
           # DRAFT: the hub does NOT auto-serve drafts to the fleet (only prereleases).
-          # Both arches land in ONE draft here. Hardware-verify, then flip the draft to
-          # Published to release to the fleet (feedback_verify_on_real_hardware).
+          # Every arch that built lands in ONE draft here. Hardware-verify, then flip the
+          # draft to Published to release to the fleet (feedback_verify_on_real_hardware).
+          # (Re-running only a failed leg later creates a SECOND draft: softprops cannot
+          # find draft releases by tag. Merge/delete by hand if that happens.)
           draft: true
           prerelease: true
           files: |
