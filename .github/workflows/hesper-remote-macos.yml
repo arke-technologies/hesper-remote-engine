@@ -21,6 +21,7 @@ name: hesper-remote-macos
 
 permissions:
   contents: write
+  actions: write # dispatch publish-update-manifest after a release
 
 on:
   workflow_dispatch:
@@ -266,12 +267,11 @@ jobs:
             HesperRemote-${{ env.VERSION }}-${{ matrix.job.arch }}.dmg.sha256
 
       # NOTE: the per-arch DMG is uploaded as a workflow artifact above; the actual
-      # release is published ONCE by the publish-macos-draft job below (a per-matrix
-      # release step would create DUPLICATE drafts, since draft releases are not
-      # findable by tag for softprops to append to).
+      # release is published ONCE by the publish-macos job below, so the arches land
+      # in one release rather than one per matrix leg.
 
-  publish-macos-draft:
-    name: Publish macOS DMGs as one draft release
+  publish-macos:
+    name: Publish macOS DMGs as one prerelease
     # Needs `plan` too, for the list of arches we expected. Runs when at least one leg
     # built (even if the other failed) so a good DMG is never stranded by its sibling;
     # `!cancelled()` still skips it when the whole run is cancelled by a human.
@@ -302,19 +302,28 @@ jobs:
             ls HesperRemote-*-"$arch".dmg >/dev/null 2>&1 || missing+=("$arch")
           done
           if [ "${#missing[@]}" -gt 0 ]; then
-            echo "::warning title=Partial macOS release::No signed DMG for: ${missing[*]}. Publishing the draft with only: ${dmgs[*]}. Fix the failed leg and re-run it, or release without that arch."
+            echo "::warning title=Partial macOS release::No signed DMG for: ${missing[*]}. Publishing the release with only: ${dmgs[*]}. Fix the failed leg and re-run it, or release without that arch."
           fi
 
-      - name: Publish as a single DRAFT release
+      - name: Publish as a single prerelease (never a draft — TK, 2026-11-20)
         uses: softprops/action-gh-release@v2
         with:
-          # DRAFT: the hub does NOT auto-serve drafts to the fleet (only prereleases).
-          # Every arch that built lands in ONE draft here. Hardware-verify, then flip the
-          # draft to Published to release to the fleet (feedback_verify_on_real_hardware).
-          # (Re-running only a failed leg later creates a SECOND draft: softprops cannot
-          # find draft releases by tag. Merge/delete by hand if that happens.)
-          draft: true
+          # Published, not drafted: a draft sat unreleased while the update manifest
+          # already advertised it. Every arch that built lands in this one release; a
+          # re-run of a failed leg finds it by tag and appends (drafts were not findable).
+          draft: false
           prerelease: true
           files: |
             HesperRemote-*.dmg
             HesperRemote-*.dmg.sha256
+
+      - name: Point the in-app update manifests at this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A release published with GITHUB_TOKEN raises no `release` event for other
+          # workflows, so publish-update-manifest would never run. Dispatch it explicitly
+          # (workflow_dispatch is exempt). It only names assets that resolve, so a
+          # platform still building keeps its current manifest.
+          V="${GITHUB_REF_NAME#linux-v}"; V="${V#win-v}"; V="${V#v}"
+          gh workflow run publish-update-manifest.yml --repo "$GITHUB_REPOSITORY" --ref main -f version="$V"
