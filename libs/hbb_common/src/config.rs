@@ -121,6 +121,24 @@ pub const RENDEZVOUS_SERVERS: &[&str] = &["102.214.9.70", "159.195.16.230"]; // 
 pub const RS_PUB_KEY: &str = "XU1zOo6SpZYfNGlsb3iMNRaEHEDYLsgEirPgI6VNt8c=";
 
 pub const RENDEZVOUS_PORT: i32 = 21116;
+
+/// Hesper: whether `server` ("host", "host:port" or "[v6]:port") names one of the baked
+/// RENDEZVOUS_SERVERS hosts. Ports are ignored: the rendezvous (21116) and relay (21117)
+/// ports sit on the same baked hosts.
+pub fn is_baked_server(server: &str) -> bool {
+    fn host(s: &str) -> String {
+        let s = s.trim().to_ascii_lowercase();
+        if let Some(rest) = s.strip_prefix('[') {
+            return rest.split(']').next().unwrap_or_default().to_owned();
+        }
+        match s.matches(':').count() {
+            1 => s.split(':').next().unwrap_or_default().to_owned(),
+            _ => s, // bare host, or a bare IPv6 address
+        }
+    }
+    let h = host(server);
+    !h.is_empty() && RENDEZVOUS_SERVERS.iter().any(|b| host(b) == h)
+}
 pub const RELAY_PORT: i32 = 21117;
 pub const WS_RENDEZVOUS_PORT: i32 = 21118;
 pub const WS_RELAY_PORT: i32 = 21119;
@@ -1366,6 +1384,49 @@ impl Config {
             bump_options_write_serial(&mut config.options);
             config.store();
         }
+    }
+
+    /// Hesper: set `k` for THIS process only. The value goes into OVERWRITE_SETTINGS,
+    /// which `get_option` reads ahead of the stored options and which is never written
+    /// to disk or sent to another process. A governed session's relay and input mode
+    /// belong to that session; persisting them (or pushing them to the running daemon
+    /// over IPC, as `ui_interface::set_option` does) pinned the installed engine to
+    /// whatever relay one failover happened to pick. An empty value drops the override.
+    pub fn set_process_option(k: &str, v: &str) {
+        let mut o = OVERWRITE_SETTINGS.write().unwrap();
+        if v.is_empty() {
+            o.remove(k);
+        } else {
+            o.insert(k.to_owned(), v.to_owned());
+        }
+    }
+
+    /// Hesper repair, run when a server starts. Earlier engines let a governed session
+    /// push its relay into the installed engine's saved config, so a device that once
+    /// failed over stayed registered on that single rendezvous server, and clients
+    /// looking it up on another baked server reported it offline. A
+    /// `custom-rendezvous-server` / `relay-server` that only names a BAKED server adds
+    /// nothing but that pin. Without it the engine registers on every baked server, so
+    /// it is cleared (with a `key` equal to the baked key). A genuinely custom server
+    /// is left alone. Returns the keys it cleared.
+    pub fn clear_baked_rendezvous_pin() -> Vec<String> {
+        let (pinned, key_is_baked) = {
+            let config = CONFIG2.read().unwrap();
+            let pinned: Vec<String> = ["custom-rendezvous-server", "relay-server"]
+                .iter()
+                .filter(|k| config.options.get(**k).map_or(false, |v| is_baked_server(v)))
+                .map(|k| k.to_string())
+                .collect();
+            let key_is_baked = config.options.get("key").map_or(false, |v| v == RS_PUB_KEY);
+            (pinned, key_is_baked)
+        };
+        for k in &pinned {
+            Self::set_option(k.clone(), String::new());
+        }
+        if !pinned.is_empty() && key_is_baked {
+            Self::set_option("key".to_owned(), String::new());
+        }
+        pinned
     }
 
     pub fn get_options_write_serial() -> u64 {
@@ -3506,6 +3567,29 @@ impl Status {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{permanent_password::PERMANENT_PASSWORD_ENC_VERSION, *};
+
+    #[test]
+    fn hesper_is_baked_server() {
+        assert!(is_baked_server("102.214.9.70"));
+        assert!(is_baked_server("159.195.16.230:21116"));
+        assert!(is_baked_server(" 159.195.16.230:21117 "));
+        assert!(!is_baked_server(""));
+        assert!(!is_baked_server("203.0.113.9:21116"));
+        assert!(!is_baked_server("rdz.example.com"));
+        assert!(!is_baked_server("[2001:db8::1]:21116"));
+    }
+
+    #[test]
+    fn hesper_process_option_overrides_without_storing() {
+        let _lock = CONFIG_STATE_TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let k = "hesper-test-process-option";
+        assert_eq!(Config::get_option(k), "");
+        Config::set_process_option(k, "159.195.16.230");
+        assert_eq!(Config::get_option(k), "159.195.16.230");
+        assert!(!CONFIG2.read().unwrap().options.contains_key(k), "a process option is never stored");
+        Config::set_process_option(k, "");
+        assert_eq!(Config::get_option(k), "");
+    }
 
     static CONFIG_STATE_TEST_LOCK: Mutex<()> = Mutex::new(());
 
