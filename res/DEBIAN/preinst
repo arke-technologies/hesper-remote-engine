@@ -7,6 +7,14 @@ case $1 in
 		INITSYS=$(ls -al /proc/1/exe | awk -F' ' '{print $NF}' | awk -F'/' '{print $NF}')
 		if [ "systemd" == "${INITSYS}" ]; then
 			service hesper-remote-engine stop >/dev/null 2>&1 || true
+      # The pre-rebrand packages (rustdesk, and hesper-remote which still used the
+      # rustdesk unit name) leave a rustdesk.service behind. Leaving it running
+      # while the rebranded engine starts makes two engines fight for
+      # /tmp/<flavour>/ipc and the loser dies with "Address already in use"
+      # (measured during the M0 pilot). Stop and disable it before unpacking.
+      systemctl stop rustdesk.service >/dev/null 2>&1 || true
+      systemctl disable rustdesk.service >/dev/null 2>&1 || true
+      rm -f /etc/systemd/system/multi-user.target.wants/rustdesk.service
       sleep 1
       rm -rf /usr/bin/libsciter-gtk.so
 		fi
