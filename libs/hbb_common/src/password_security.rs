@@ -1,9 +1,57 @@
 use crate::config::Config;
 use sodiumoxide::{base64, crypto::secretbox};
 use std::sync::{Arc, RwLock};
+use std::time::{Duration, Instant};
 
 lazy_static::lazy_static! {
     pub static ref TEMPORARY_PASSWORD:Arc<RwLock<String>> = Arc::new(RwLock::new(get_auto_password()));
+    // Hesper governed-session OTP: see `set_session_otp`.
+    static ref SESSION_OTP: RwLock<Option<(String, Instant)>> = RwLock::new(None);
+}
+
+/// How long a hub-issued session OTP stays valid in the engine. The hub bounds the
+/// session itself (grant/command expiry); this is the engine-side backstop so an OTP
+/// can never become a standing credential.
+pub const SESSION_OTP_TTL: Duration = Duration::from_secs(60 * 60);
+
+/// Hesper governed unattended session: store the hub-issued one-time connect password
+/// (OTP) as a DEDICATED, in-memory, time-limited credential.
+///
+/// Why not the temporary or permanent password: the OTP used to be written into the
+/// temporary password (rotated by the brute-force guard and refused when
+/// `verification-method` is permanent-only) or, on the headless cold-spawn path, into
+/// the PERSISTED permanent password plus `verification-method`/`approve-mode` options
+/// shared with the installed daemon. Either way the engine the controller actually
+/// reached often did not hold the OTP, so an "unattended" session fell back to a WRONG
+/// PASSWORD error and an on-endpoint Accept prompt. A dedicated slot fixes all of that:
+/// it is never rotated, never persisted, never touches the operator's or the managed
+/// fleet password, and is honoured whatever the verification/approve settings are
+/// (the hub has already gated consent before issuing it).
+///
+/// An empty value clears it. Should only be called in server.
+pub fn set_session_otp(otp: String) {
+    let otp = otp.trim().to_owned();
+    *SESSION_OTP.write().unwrap() = if otp.is_empty() {
+        None
+    } else {
+        Some((otp, Instant::now()))
+    };
+}
+
+/// The current session OTP, if one is set and has not expired. Should only be called
+/// in server.
+pub fn session_otp() -> Option<String> {
+    session_otp_at(Instant::now())
+}
+
+fn session_otp_at(now: Instant) -> Option<String> {
+    let guard = SESSION_OTP.read().unwrap();
+    match guard.as_ref() {
+        Some((otp, set_at)) if now.saturating_duration_since(*set_at) < SESSION_OTP_TTL => {
+            Some(otp.clone())
+        }
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -82,7 +130,8 @@ pub fn permanent_enabled() -> bool {
 }
 
 pub fn has_valid_password() -> bool {
-    temporary_enabled() && !temporary_password().is_empty()
+    session_otp().is_some()
+        || temporary_enabled() && !temporary_password().is_empty()
         || permanent_enabled() && Config::has_permanent_password()
 }
 
@@ -274,6 +323,37 @@ fn open_secretbox_payload(data: &[u8], key: &secretbox::Key) -> Result<Vec<u8>, 
 }
 
 mod test {
+
+    // One test owns the process-global SESSION_OTP, so ordering is deterministic.
+    #[test]
+    fn session_otp_lifecycle() {
+        use super::*;
+        use std::time::{Duration, Instant};
+
+        set_session_otp(String::new());
+        assert_eq!(session_otp(), None, "starts cleared");
+
+        set_session_otp("  aBc-123_XyZ  \n".to_owned());
+        assert_eq!(session_otp().as_deref(), Some("aBc-123_XyZ"), "trimmed and readable");
+
+        let now = Instant::now();
+        assert_eq!(
+            session_otp_at(now + SESSION_OTP_TTL - Duration::from_secs(1)).as_deref(),
+            Some("aBc-123_XyZ"),
+            "valid inside the TTL"
+        );
+        assert_eq!(
+            session_otp_at(now + SESSION_OTP_TTL + Duration::from_secs(1)),
+            None,
+            "expired after the TTL"
+        );
+
+        set_session_otp("next".to_owned());
+        assert_eq!(session_otp().as_deref(), Some("next"), "a new session replaces the old OTP");
+
+        set_session_otp(String::new());
+        assert_eq!(session_otp(), None, "empty clears");
+    }
 
     #[test]
     fn test() {

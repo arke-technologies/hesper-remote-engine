@@ -1172,12 +1172,16 @@ async fn handle(data: Data, stream: &mut Connection) {
             );
         }
         Data::SetSessionOtp(otp) => {
-            // A5.1: store the agent-injected per-session OTP as the current
-            // temporary password so the connect flow (`validate_password`) accepts
-            // it. Called by the co-installed agent at consent time to pre-warm a
-            // standby engine; consent still gates whether the peer may connect.
-            password::set_temporary_password(otp);
-            log::info!("session OTP set via IPC (A5.1 pre-warm)");
+            // A5.1: store the agent-injected per-session OTP in the DEDICATED
+            // session-OTP slot (`password::set_session_otp`), which the connect flow
+            // honours whatever `verification-method`/`approve-mode` are, and which the
+            // temporary-password rotation never touches. It used to overwrite the
+            // temporary password, which was refused on permanent-only endpoints and
+            // rotated by the brute-force guard, so unattended sessions hit WRONG
+            // PASSWORD. The agent calls this at consent time on the RUNNING daemon,
+            // so the controller reaches the one engine that holds the OTP.
+            password::set_session_otp(otp);
+            log::info!("session OTP set via IPC");
         }
         _ => {}
     };
@@ -1576,10 +1580,12 @@ pub fn update_temporary_password() -> ResultType<()> {
     set_config("temporary-password", "".to_owned())
 }
 
-// A5.1: send a per-session OTP to the running ("standby") daemon over main IPC.
-// The daemon stores it as the current temporary password (see the
-// `Data::SetSessionOtp` handler) so a governed session connects without
-// cold-spawning the engine. Mirrors the existing `set_data`-based sender path.
+// A5.1: send a per-session OTP to the running daemon over main IPC. The daemon
+// stores it in the dedicated session-OTP slot (see the `Data::SetSessionOtp`
+// handler and `password::set_session_otp`), which the connect flow honours
+// whatever the verification/approve settings are. Used by the agent's
+// `--set-session-otp` verb and by the headless spawn to reach an installed daemon
+// that shares its peer id. Mirrors the existing `set_data`-based sender path.
 pub fn set_session_otp(otp: String) -> ResultType<()> {
     set_data(&Data::SetSessionOtp(otp))
 }

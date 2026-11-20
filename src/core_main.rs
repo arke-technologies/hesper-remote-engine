@@ -1123,20 +1123,43 @@ fn run_hesper_headless(a: HesperHeadlessArgs) -> Option<Vec<String>> {
         if otp.is_empty() { "absent" } else { "present" }
     );
 
-    // Per-session connect authorization (S3, closes the D5 double-gate). When the
-    // agent supplied a one-time OTP, provision it as THIS process's permanent
-    // password and switch to `password` approve-mode, so an operator whose connect
-    // URI carries `?password=<otp>` is admitted straight away — no on-endpoint
-    // Accept prompt (which is exactly what made unattended sessions still prompt).
-    // The secret is PROCESS-SCOPED: it only lives in this headless server's config
-    // for the life of the process and rotates every session, so this is NOT the
-    // static permanent-password model — it is a per-session credential. Empty OTP
-    // → leave the stock approve-mode untouched (no behaviour change / version skew).
+    // Connect authorization.
+    //
+    // GOVERNED SESSION (ticket present): the OTP goes into the dedicated in-memory
+    // session-OTP slot (`password::set_session_otp`). The connect flow honours it
+    // whatever `verification-method`/`approve-mode` are and never diverts it to the
+    // Accept prompt. It is deliberately NOT written to the permanent password or the
+    // approve/verification options any more: `config::Config` is SHARED with the
+    // installed daemon (same config dir and peer id), so that persisted this session's
+    // OTP as the box's permanent password and flipped the daemon to permanent-only
+    // verification. That overwrote the operator's and the managed fleet password, and
+    // left the daemon (which caches its config) holding a stale password, so a
+    // controller routed to the daemon got WRONG PASSWORD plus an Accept prompt.
+    //
+    // MANAGED STANDBY (no ticket, managed password on line 2; agent
+    // managed_standby.go): unchanged. The standing managed password IS the durable
+    // permanent password in `password` approve-mode, by design.
+    //
+    // Empty OTP → stock behaviour (no change / version skew).
     if !otp.is_empty() {
-        config::Config::set_permanent_password(&otp);
-        crate::ui_interface::set_option("verification-method".into(), "use-permanent-password".into());
-        crate::ui_interface::set_option("approve-mode".into(), "password".into());
-        log::info!("hesper headless: per-session connect OTP provisioned (password approve-mode)");
+        if !ticket.is_empty() {
+            hbb_common::password_security::set_session_otp(otp.clone());
+            log::info!("hesper headless: governed session OTP provisioned (session-OTP slot)");
+            // An installed engine daemon may already be running with the SAME peer id
+            // (shared config), and the relay may route the controller to it rather
+            // than to this process. Hand it the OTP too, so whichever engine answers
+            // accepts it. Best-effort: no daemon → the IPC connect fails within ~1s.
+            // Runs BEFORE start_server, so set_data's own runtime is not nested.
+            match crate::ipc::set_session_otp(otp.clone()) {
+                Ok(()) => log::info!("hesper headless: session OTP also handed to the running daemon"),
+                Err(_) => log::info!("hesper headless: no running daemon to hand the session OTP to"),
+            }
+        } else {
+            config::Config::set_permanent_password(&otp);
+            crate::ui_interface::set_option("verification-method".into(), "use-permanent-password".into());
+            crate::ui_interface::set_option("approve-mode".into(), "password".into());
+            log::info!("hesper headless: managed standby password provisioned (password approve-mode)");
+        }
     }
 
     // Relay config — confirm-or-override the build-baked Hesper relay (PREFLIGHT §3;
