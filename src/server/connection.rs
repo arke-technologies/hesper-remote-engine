@@ -2175,7 +2175,29 @@ impl Connection {
         state.failures = 0;
     }
 
+    /// Hesper governed unattended session: does the login present the hub-issued
+    /// session OTP (`password::set_session_otp`)? Honoured whatever
+    /// `verification-method`/`approve-mode` are, because the hub gated consent before
+    /// issuing it. Never rotated, never persisted, expires with SESSION_OTP_TTL.
+    fn validate_session_otp(&self) -> bool {
+        match password::session_otp() {
+            Some(otp) => self.validate_password_plain(&otp),
+            None => false,
+        }
+    }
+
     fn validate_password(&mut self, allow_permanent_password: bool) -> bool {
+        if let Some(otp) = password::session_otp() {
+            if self.validate_password_plain(&otp) {
+                raii::AuthedConnID::update_or_insert_session(
+                    self.session_key(),
+                    Some(otp),
+                    Some(false),
+                );
+                log::info!("governed session OTP accepted");
+                return true;
+            }
+        }
         if password::temporary_enabled() {
             let password = password::temporary_password();
             if self.validate_password_plain(&password) {
@@ -2531,8 +2553,15 @@ impl Connection {
                 crate::get_builtin_option(keys::OPTION_ALLOW_LOGON_SCREEN_PASSWORD) == "Y"
                     && is_logon();
 
-            if (password::approve_mode() == ApproveMode::Click && !allow_logon_screen_password)
-                || password::approve_mode() == ApproveMode::Both && !password::has_valid_password()
+            // A login carrying the hub-issued session OTP is an approved, unattended
+            // Hesper session: never divert it to the on-endpoint Accept prompt, even in
+            // `click` approve-mode. It falls through to `validate_password` below.
+            let governed_session_otp = !lr.password.is_empty() && self.validate_session_otp();
+            if !governed_session_otp
+                && ((password::approve_mode() == ApproveMode::Click
+                    && !allow_logon_screen_password)
+                    || password::approve_mode() == ApproveMode::Both
+                        && !password::has_valid_password())
             {
                 #[cfg(not(any(target_os = "android", target_os = "ios")))]
                 if should_use_terminal_os_login_scope(self.terminal, &lr.os_login.username) {
