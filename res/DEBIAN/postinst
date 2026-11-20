@@ -23,13 +23,25 @@ if [ "$1" = configure ]; then
 		systemctl daemon-reload
 		systemctl enable hesper-remote-engine
 		systemctl start hesper-remote-engine
+
+		# Rebrand cleanup. The pre-rebrand packages installed a rustdesk-named
+		# unit, binary symlink and PAM service. dpkg removes their package files,
+		# but conffiles and the unit's enable symlink survive — so a fleet upgrade
+		# would otherwise keep an /etc/pam.d/rustdesk pointing at a binary that no
+		# longer exists, plus an enabled-but-dead rustdesk unit.
+		rm -f /usr/lib/systemd/system/rustdesk.service \
+		      /lib/systemd/system/rustdesk.service \
+		      /etc/systemd/system/rustdesk.service
+		if [ -L /usr/bin/rustdesk ]; then rm -f /usr/bin/rustdesk; fi
+		rm -f /etc/pam.d/rustdesk
+		systemctl daemon-reload || true
 	fi
 
 	# Refresh the desktop/MIME cache so the x-scheme-handler/{hesperremote,rustdesk}
-	# associations declared in rustdesk-link.desktop take effect at once. Without
-	# this the "Start session" deep link shows "No Apps Available" until some other
-	# event rebuilds the cache. Guarded + non-fatal so a missing tool never breaks
-	# the install (set -e is active).
+	# associations declared in hesper-remote-engine-link.desktop take effect at
+	# once. Without this the "Start session" deep link shows "No Apps Available"
+	# until some other event rebuilds the cache. Guarded + non-fatal so a missing
+	# tool never breaks the install (set -e is active).
 	if command -v update-desktop-database >/dev/null 2>&1; then
 		update-desktop-database -q /usr/share/applications || true
 	fi
