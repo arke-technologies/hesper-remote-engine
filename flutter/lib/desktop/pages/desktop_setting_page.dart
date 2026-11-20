@@ -2716,7 +2716,7 @@ class _AboutState extends State<_About> {
 // the kCheckSoftwareUpdateManualFinish completion event additionally reports
 // the "already latest" / failure outcomes the passive channel never emits.
 // The Install action mirrors the banner: handleUpdate() on macOS / installed
-// Windows, the public download page otherwise.
+// Windows, otherwise the release asset the check found (downloaded directly).
 class _AboutUpdates extends StatefulWidget {
   final String version;
   const _AboutUpdates({Key? key, required this.version}) : super(key: key);
@@ -2845,7 +2845,8 @@ class _AboutUpdatesState extends State<_AboutUpdates> {
                   if (isToUpdate) {
                     handleUpdate(updateUrl);
                   } else {
-                    launchUrlString('https://hesperitsm.com/download');
+                    // The verified release asset itself (see the home banner).
+                    launchUrlString(updateUrl);
                   }
                 },
                 child: Text(translate(isToUpdate ? 'Update' : 'Download'))
