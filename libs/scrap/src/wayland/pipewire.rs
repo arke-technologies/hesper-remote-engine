@@ -991,22 +991,78 @@ pub(crate) fn is_server_running() -> bool {
         return v == 1;
     }
 
-    let app_name = config::APP_NAME.read().unwrap().clone().to_lowercase();
-    let output = match Command::new(CMD_SH.as_str())
-        .arg("-c")
-        .arg(&format!("ps aux | grep {}", app_name))
-        .output()
-    {
+    // Hesper: match the RUNNING executable, not APP_NAME. The stock check ran
+    // `ps aux | grep <app name>` and looked for "<app name> --server". With APP_NAME
+    // "Hesper Remote" the unquoted space made grep read "remote" as a file name, and
+    // the binary is `hesper-remote-engine` anyway, so this was always false on a
+    // Hesper install. A false here means no ScreenCast persist_mode/restore_token
+    // (every session re-asks at the portal and nothing is remembered) and the
+    // RemoteDesktop-portal input path instead of uinput. That is what made unattended
+    // Wayland sessions on Ubuntu 26.04 sit at the screen picker until they timed out.
+    let output = match Command::new("ps").args(["-eo", "args="]).output() {
         Ok(output) => output,
         Err(_) => {
             return false;
         }
     };
-
-    let output_str = String::from_utf8_lossy(&output.stdout);
-    let is_running = output_str.contains(&format!("{} --server", app_name));
+    let is_running = server_process_listed(
+        &String::from_utf8_lossy(&output.stdout),
+        &server_binary_names(),
+    );
     IS_SERVER_RUNNING.store(if is_running { 1 } else { 2 }, Ordering::SeqCst);
     is_running
+}
+
+/// Executable names a `--server` process of this install can have: the running binary's
+/// own file name (`hesper-remote-engine`, or `rustdesk` on a pre-rebrand install) and
+/// the stock lower-cased APP_NAME, kept for upstream parity.
+fn server_binary_names() -> Vec<String> {
+    let mut names = vec![];
+    if let Some(n) = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.file_name().map(|f| f.to_string_lossy().to_string()))
+    {
+        names.push(n);
+    }
+    names.push(config::APP_NAME.read().unwrap().clone().to_lowercase());
+    names
+}
+
+/// Whether a `ps -eo args=` listing holds `<name> --server` for one of `names`, where
+/// `<name>` is the executable's file name (any directory in front of it).
+fn server_process_listed(ps_args: &str, names: &[String]) -> bool {
+    ps_args.lines().any(|line| {
+        let mut words = line.split_whitespace();
+        let exe = words.next().unwrap_or_default();
+        let exe = exe.rsplit('/').next().unwrap_or_default();
+        words.next() == Some("--server") && names.iter().any(|n| !n.is_empty() && n == exe)
+    })
+}
+
+#[cfg(test)]
+mod hesper_server_running_tests {
+    use super::server_process_listed;
+
+    fn names() -> Vec<String> {
+        vec!["hesper-remote-engine".into(), "hesper remote".into()]
+    }
+
+    #[test]
+    fn finds_the_rebranded_server() {
+        let ps = "/usr/bin/hesper-remote-engine --service\n/usr/share/hesper-remote-engine/hesper-remote-engine --server\n";
+        assert!(server_process_listed(ps, &names()));
+    }
+
+    #[test]
+    fn ignores_other_modes_and_other_programs() {
+        let ps = "/usr/bin/hesper-remote-engine --service\n/usr/bin/hesper-remote-engine --mode input_control\n/usr/share/hesper-remote-engine/hesper-remote-engine --tray\ngrep hesper-remote-engine --server\n";
+        assert!(!server_process_listed(ps, &names()));
+    }
+
+    #[test]
+    fn finds_a_pre_rebrand_server_by_its_own_binary_name() {
+        assert!(server_process_listed("/usr/bin/rustdesk --server\n", &["rustdesk".into()]));
+    }
 }
 
 // The logical size reported by portal may be different from the size reported by `get_displays()`.
