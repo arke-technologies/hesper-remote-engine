@@ -1162,28 +1162,30 @@ fn run_hesper_headless(a: HesperHeadlessArgs) -> Option<Vec<String>> {
         }
     }
 
-    // Relay config — confirm-or-override the build-baked Hesper relay (PREFLIGHT §3;
-    // RS_PUB_KEY is baked, so these are usually confirmatory).
-    // DECISION #1: `set_option` persists to this process's config. For a dedicated
-    // Hesper-managed endpoint the values equal the baked relay (idempotent); a
-    // strictly process-scoped override is a later refinement.
+    // Relay config: this SESSION's relay, for this process only
+    // (`Config::set_process_option`, never stored). It used to go through
+    // `ui_interface::set_option`, which sends the option to the RUNNING daemon over IPC,
+    // and the daemon saves it. A session that failed over to a second relay therefore
+    // pinned the installed engine to that relay for good. It then registered nowhere
+    // else, and clients looking it up on the other baked server saw it offline
+    // (htk-ubuntu, 2026-11-20: pinned to EU by one failover, unreachable from JHB).
     if let Some(host) = a.rendezvous {
-        crate::ui_interface::set_option("custom-rendezvous-server".into(), host);
+        hbb_common::config::Config::set_process_option("custom-rendezvous-server", &host);
     }
     if let Some(relay) = a.relay {
-        crate::ui_interface::set_option("relay-server".into(), relay);
+        hbb_common::config::Config::set_process_option("relay-server", &relay);
     }
     if let Some(key) = a.relay_key {
-        crate::ui_interface::set_option("key".into(), key);
+        hbb_common::config::Config::set_process_option("key", &key);
     }
 
-    // Mode — controlled-server keyboard permission (`OPTION_ENABLE_KEYBOARD`, read
-    // per-connection at connection.rs:469 → `Permission::keyboard`). `option2bool`
-    // treats "enable-*" as enabled unless the value is "N". Set BOTH directions so
-    // a later input_control spawn self-heals any prior view-only state.
+    // Mode: controlled-server keyboard permission (`OPTION_ENABLE_KEYBOARD`, read
+    // per-connection at connection.rs → `Permission::keyboard`). `option2bool` treats
+    // "enable-*" as enabled unless the value is "N". Process-scoped for the same reason
+    // as the relay: a view-only session must never make the installed engine view-only.
     match a.mode.as_deref() {
-        Some("view") => crate::ui_interface::set_option("enable-keyboard".into(), "N".into()),
-        _ => crate::ui_interface::set_option("enable-keyboard".into(), "Y".into()),
+        Some("view") => hbb_common::config::Config::set_process_option("enable-keyboard", "N"),
+        _ => hbb_common::config::Config::set_process_option("enable-keyboard", "Y"),
     }
 
     // Session targeting — controlled-endpoint (Windows) machinery (spec §2/§C).

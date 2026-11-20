@@ -588,6 +588,13 @@ pub async fn start_server(is_server: bool, no_server: bool) {
     });
 
     if is_server {
+        // Hesper repair: undo a relay pin an earlier engine's session left behind, so
+        // this server registers on every baked rendezvous server again
+        // (Config::clear_baked_rendezvous_pin).
+        let cleared = hbb_common::config::Config::clear_baked_rendezvous_pin();
+        if !cleared.is_empty() {
+            log::info!("hesper: cleared a session-pinned rendezvous {:?}; registering on every baked server", cleared);
+        }
         crate::common::set_server_running(true);
         std::thread::spawn(move || {
             if let Err(err) = crate::ipc::start("") {
