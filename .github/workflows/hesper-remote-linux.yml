@@ -1,7 +1,7 @@
 # Hesper Remote — Linux build (x86_64): flutter-linux bundle + .deb (primary,
 # installs on Debian/Ubuntu) and a best-effort AppImage. Adapted from RustDesk's
 # proven Linux build and THIS repo's mac/win workflow pattern (bridge → flutter →
-# rust → vcpkg → build.py → draft prerelease). The relay + name + icons are baked
+# rust → vcpkg → build.py → published prerelease). The relay + name + icons are baked
 # into the source (this fork), not env vars.
 #
 # Triggered by a `linux-v*` tag (so it does NOT re-fire the macOS `v*` or Windows
@@ -12,6 +12,7 @@ name: hesper-remote-linux
 
 permissions:
   contents: write
+  actions: write # dispatch publish-update-manifest after a release
 
 on:
   workflow_dispatch:
@@ -150,8 +151,8 @@ jobs:
             HesperRemote-${{ env.VERSION }}-x86_64.AppImage.sha256
           if-no-files-found: warn
 
-  publish-linux-draft:
-    name: Publish Linux build as a draft release
+  publish-linux:
+    name: Publish Linux build as a prerelease
     needs: [build-for-linux]
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
@@ -161,13 +162,24 @@ jobs:
         with:
           pattern: HesperRemote-linux-*
           merge-multiple: true
-      - name: Publish as a DRAFT prerelease
+      - name: Publish as a prerelease (never a draft — TK, 2026-11-20)
         uses: softprops/action-gh-release@v2
         with:
-          draft: true
+          draft: false
           prerelease: true
           files: |
             HesperRemote-*-x86_64.deb
             HesperRemote-*-x86_64.deb.sha256
             HesperRemote-*-x86_64.AppImage
             HesperRemote-*-x86_64.AppImage.sha256
+
+      - name: Point the in-app update manifests at this release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A release published with GITHUB_TOKEN raises no `release` event for other
+          # workflows, so publish-update-manifest would never run. Dispatch it explicitly
+          # (workflow_dispatch is exempt). It only names assets that resolve, so a
+          # platform still building keeps its current manifest.
+          V="${GITHUB_REF_NAME#linux-v}"; V="${V#win-v}"; V="${V#v}"
+          gh workflow run publish-update-manifest.yml --repo "$GITHUB_REPOSITORY" --ref main -f version="$V"

@@ -13,6 +13,7 @@ name: hesper-remote-windows
 
 permissions:
   contents: write
+  actions: write # dispatch publish-update-manifest after a release
 
 on:
   workflow_dispatch:
@@ -177,11 +178,23 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          # DRAFT: the hub does NOT auto-serve drafts to the fleet (only prereleases).
-          # Hardware-verify the artifact, then flip the draft to Published to release.
-          # Single-job build, so one softprops call = one draft (no duplication).
-          draft: true
+          # Published, never a draft (TK, 2026-11-20): a draft sat unreleased while the
+          # update manifest already advertised it, so the fleet got a 404. The hub and
+          # the in-app updater serve prereleases, so this release reaches the fleet now.
+          draft: false
           prerelease: true
           files: |
             HesperRemote-${{ env.VERSION }}-x86_64-windows-setup.exe
             HesperRemote-${{ env.VERSION }}-x86_64-windows-setup.exe.sha256
+
+      - name: Point the in-app update manifests at this release
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A release published with GITHUB_TOKEN raises no `release` event for other
+          # workflows, so publish-update-manifest would never run. Dispatch it explicitly
+          # (workflow_dispatch is exempt). It only names assets that resolve, so a
+          # platform still building keeps its current manifest.
+          V="${GITHUB_REF_NAME#linux-v}"; V="${V#win-v}"; V="${V#v}"
+          gh workflow run publish-update-manifest.yml --repo "$GITHUB_REPOSITORY" --ref main -f version="$V"
