@@ -704,9 +704,13 @@ class _DesktopHomePageState extends State<DesktopHomePage>
             bind.mainUriPrefixSync().contains('rustdesk'))) {
       final isToUpdate = isMacOS || (isWindows && bind.mainIsInstalled());
       String btnText = isToUpdate ? 'Update' : 'Download';
+      // Hesper: "Download" opens the exact release asset the update check
+      // found (a public GitHub release download, verified to resolve before
+      // the manifest names it). There is no separate download site to route
+      // through: hesperitsm.com/download never served, so this button opened
+      // a dead page.
       GestureTapCallback onPressed = () async {
-        final Uri url = Uri.parse('https://hesperitsm.com/download');
-        await launchUrl(url);
+        await launchUrl(Uri.parse(updateUrl));
       };
       if (isToUpdate) {
         onPressed = () {
