@@ -1,0 +1,209 @@
+# Hesper Remote — pilot-verify (M0.8, DRAFT)
+#
+# Purpose: prove the testability claim that the release lanes currently do NOT
+# make. Today `hesper-remote-{linux,windows,macos}.yml` build and package only —
+# zero `cargo test`, `flutter test` or `dart test` steps. This workflow adds:
+#
+#   1. the Rust unit suite for the crate that ships (`cargo test --lib`)
+#   2. the Flutter widget suite that genuinely exists under `flutter/test`
+#   3. a headless start/exit smoke on Linux: install the built .deb, run the
+#      headless entrypoint with a throwaway ticket/OTP on stdin, and assert the
+#      server reached the relay before exiting.
+#
+# NON-GATING BY DESIGN (handoff M0.8): every job is `continue-on-error: true`
+# and this workflow must NOT be added to branch protection until it has produced
+# a green run on all three OSes. Remove the continue-on-error flags one job at a
+# time, starting with `rust-linux`, once each has a real measured pass.
+#
+# The bridge is not committed (six generated files are gitignored), so this
+# reuses the existing `bridge.yml` recipe exactly as the release lanes do.
+name: pilot-verify
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "libs/**"
+      - "flutter/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/pilot-verify.yml"
+
+permissions:
+  contents: read
+
+env:
+  FLUTTER_VERSION: "3.24.5"
+  VCPKG_COMMIT_ID: "120deac3062162151622ca4860575a33844ba10b"
+  # ZA primary relay (libs/hbb_common/src/config.rs RENDEZVOUS_SERVERS[0]).
+  # Overridable so the smoke can be pointed at a test relay.
+  RELAY: "102.214.9.70"
+
+jobs:
+  generate-bridge:
+    uses: ./.github/workflows/bridge.yml
+    secrets: inherit
+
+  rust-linux:
+    name: cargo test (ubuntu-22.04)
+    needs: [generate-bridge]
+    runs-on: ubuntu-22.04
+    continue-on-error: true # non-gating until proven
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ gcc git curl wget nasm yasm cmake ninja-build pkg-config \
+            clang libclang-dev llvm-dev libunwind-dev \
+            libgtk-3-dev libxcb-randr0-dev libxdo-dev libxfixes-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libasound2-dev libpulse-dev \
+            libpam0g-dev libappindicator3-dev libvdpau-dev libva-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libwayland-dev libxkbcommon-dev libgl1-mesa-dev
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+
+      - name: Install vcpkg dependencies
+        run: $VCPKG_ROOT/vcpkg install
+
+      # `scrap`'s build script panics without vcpkg, so this suite does not run
+      # at all unless the step above succeeds. Measured locally: 86 passed.
+      - name: cargo test (lib)
+        env:
+          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
+        run: cargo test --locked --features flutter,unix-file-copy-paste --lib
+
+  flutter-test:
+    name: flutter test (${{ matrix.os }})
+    needs: [generate-bridge]
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, windows-2022, macos-15]
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true # non-gating until proven
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      # NOTE: plain `pub get`, deliberately NOT `--enforce-lockfile`. The
+      # committed flutter/pubspec.lock declares Dart >=3.8.0-0 while Flutter
+      # 3.24.5 ships Dart 3.5.4, so strict enforcement fails by construction
+      # (measured: exit 65, 21 dependency changes). pubspec.yaml's own
+      # constraint (^3.1.0) resolves fine. Switch to --enforce-lockfile once
+      # the lock is reconciled; that is a prerequisite for gating this job.
+      - name: flutter pub get
+        working-directory: flutter
+        run: flutter pub get
+
+      - name: flutter test
+        working-directory: flutter
+        run: flutter --no-version-check test --no-pub --concurrency=1 --reporter expanded test
+
+  headless-smoke:
+    name: headless start/exit smoke (ubuntu-22.04)
+    needs: [generate-bridge]
+    runs-on: ubuntu-22.04
+    continue-on-error: true # non-gating until proven
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@v4
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            g++ gcc git curl wget nasm yasm cmake ninja-build pkg-config \
+            clang libclang-dev llvm-dev libunwind-dev \
+            libgtk-3-dev libxcb-randr0-dev libxdo-dev libxfixes-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libasound2-dev libpulse-dev \
+            libpam0g-dev libappindicator3-dev libvdpau-dev libva-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
+            libwayland-dev libxkbcommon-dev libgl1-mesa-dev xvfb
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          cache: true
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: lukka/run-vcpkg@v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+
+      - name: Install vcpkg dependencies
+        run: $VCPKG_ROOT/vcpkg install
+
+      - name: Build .deb
+        env:
+          VCPKG_ROOT: ${{ env.VCPKG_ROOT }}
+        run: ./build.py --flutter --unix-file-copy-paste
+
+      - name: Install the built package
+        run: sudo apt-get install -y ./rustdesk-*.deb
+
+      # The headless entrypoint takes the session ticket on stdin line 1 and the
+      # one-time OTP on line 2 (contract with the Go agent; never argv). The
+      # process is a controlled server, so it stays up until the session ends —
+      # `timeout` is the expected terminator, not a failure.
+      - name: Run headless entrypoint under Xvfb
+        run: |
+          set +e
+          BIN="$(command -v hesper-remote-engine || command -v rustdesk)"
+          echo "engine binary: $BIN"
+          printf 'ci-ticket\nci-otp\n' | \
+            timeout 45 xvfb-run -a "$BIN" --mode view \
+              --rendezvous "$RELAY" --relay "$RELAY"
+          echo "exit=$? (124 = timeout, expected for a long-lived server)"
+
+      - name: Assert the headless server started and reached the relay
+        run: |
+          LOG="$(ls -t "$HOME"/.local/share/logs/*/*/rustdesk_rCURRENT.log 2>/dev/null | head -1)"
+          echo "--- log: $LOG ---"
+          tail -100 "$LOG"
+          grep -q "hesper headless: starting controlled server" "$LOG"
+          grep -q "hesper headless: per-session connect OTP provisioned" "$LOG"
+          grep -q "start rendezvous mediator of $RELAY" "$LOG"
+
+      - name: Upload engine log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: headless-smoke-log
+          path: |
+            ~/.local/share/logs/**/rustdesk_rCURRENT.log
+          if-no-files-found: ignore
