@@ -1,7 +1,7 @@
 [package]
 name = "rustdesk"
 version = "1.5.24"
-authors = ["rustdesk <info@rustdesk.com>"]
+authors = ["Arke Technologies <support@hesperitsm.com>"]
 edition = "2021"
 build= "build.rs"
 description = "Hesper Remote"
@@ -213,10 +213,10 @@ exclude = ["vdi/host", "examples/custom_plugin"]
 libxdo-sys = { path = "libs/libxdo-sys-stub" }
 
 [package.metadata.winres]
-LegalCopyright = "Copyright © 2025 Purslane Ltd. All rights reserved."
-ProductName = "RustDesk"
-FileDescription = "RustDesk Remote Desktop"
-OriginalFilename = "rustdesk.exe"
+LegalCopyright = "Copyright © 2026 Arke Technologies (Pty) Ltd. Based on RustDesk (AGPL-3.0)."
+ProductName = "Hesper Remote"
+FileDescription = "Hesper Remote - secure remote desktop and support"
+OriginalFilename = "HesperRemote.exe"
 
 [target.'cfg(target_os="windows")'.build-dependencies]
 winres = "0.1"

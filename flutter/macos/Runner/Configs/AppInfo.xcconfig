@@ -11,4 +11,4 @@ PRODUCT_NAME = Hesper Remote
 PRODUCT_BUNDLE_IDENTIFIER = dev.spout.hesperremote
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 Spout Technologies (Pty) Ltd. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Arke Technologies (Pty) Ltd. All rights reserved.
