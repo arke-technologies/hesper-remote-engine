@@ -721,7 +721,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
           closeButton: true,
           help: isToUpdate ? 'Changelog' : null,
           link: isToUpdate
-              ? 'https://github.com/spout-technologies/hesper-remote-engine/releases'
+              ? 'https://github.com/arke-technologies/hesper-remote-engine/releases'
               : null);
     }
     if (systemError.isNotEmpty) {

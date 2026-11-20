@@ -1,11 +1,11 @@
 # Hesper Remote Engine — CI Preflight & Secret Manifest
 
-Everything the `spout-technologies/hesper-remote-engine` CI needs. Keep the AGPL
+Everything the `arke-technologies/hesper-remote-engine` CI needs. Keep the AGPL
 toolchain + build logs OUT of the private Hesper tree — this is a separate repo.
 
 ## 0. Repo creation (one-time, human-gated)
 
-1. Create `spout-technologies/hesper-remote-engine` (PRIVATE in the Spout org;
+1. Create `arke-technologies/hesper-remote-engine` (PRIVATE in the Arke org;
    flip PUBLIC at first Release to satisfy AGPL corresponding-source).
 2. `git subtree`/copy RustDesk at a pinned release tag; preserve its `LICENSE`.
 3. Rebrand; bake the Spout relay: `RENDEZVOUS_SERVER=<hbbs host>`,

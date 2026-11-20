@@ -507,7 +507,7 @@ pub fn version_check_request(typ: String) -> (VersionCheckRequest, String) {
     let os_version = system.os_version().unwrap_or_default();
     let arch = std::env::consts::ARCH.to_string();
     let url = format!(
-        "https://raw.githubusercontent.com/spout-technologies/hesper-remote-engine/updates/{}-{}.json",
+        "https://raw.githubusercontent.com/arke-technologies/hesper-remote-engine/updates/{}-{}.json",
         std::env::consts::OS,
         std::env::consts::ARCH,
     );

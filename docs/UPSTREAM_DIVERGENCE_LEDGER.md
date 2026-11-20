@@ -5,7 +5,7 @@ routing, updater) but must keep ingesting upstream **security and codec/capture 
 map of what we own outright vs. what we track, and the record of each ingestion.
 
 **Fork baseline:** RustDesk tag **1.4.8** (`3c574a41`), `hbb_common` `387603f4`. Current fork: see `src/version.rs`.
-**Remotes:** `origin` = `spout-technologies/hesper-remote-engine`; `upstream` = `rustdesk/rustdesk` (added 2026-07-16,
+**Remotes:** `origin` = `arke-technologies/hesper-remote-engine`; `upstream` = `rustdesk/rustdesk` (added 2026-07-16,
 for CVE diffing — we do NOT merge upstream, we cherry-pick into tracked subsystems).
 
 ## Subsystem ownership map
