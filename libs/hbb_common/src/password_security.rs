@@ -54,6 +54,53 @@ fn session_otp_at(now: Instant) -> Option<String> {
     }
 }
 
+/// LocalConfig key that holds the hub-issued MANAGED fleet password, machine-key
+/// encrypted. LocalConfig is per-process local state, never part of the options that
+/// sync to the UI or between root and user.
+pub const MANAGED_PASSWORD_KEY: &str = "hesper-managed-password";
+const MANAGED_PASSWORD_MAX_LEN: usize = 128;
+
+/// Hesper managed fleet password: its OWN persisted slot, beside (never instead of) the
+/// operator's permanent password.
+///
+/// It used to BE the permanent password: `--set-managed-password` and the managed
+/// standby overwrote the operator's permanent password on every agent start, and
+/// forced `verification-method=use-permanent-password` (switching one-time passwords
+/// off) and `approve-mode=password`. TK, 2026-11-21: the permanent password is the
+/// operator's and nothing Hesper does may reset it. A login is now accepted when it
+/// matches the permanent password, the temporary password, the session OTP OR this
+/// slot. Setting or clearing the slot touches none of the others and no option.
+///
+/// An empty value clears it.
+pub fn set_managed_password(pw: &str) {
+    crate::config::LocalConfig::set_option(MANAGED_PASSWORD_KEY.to_owned(), encode_managed_password(pw));
+}
+
+/// The managed fleet password, if one is set.
+pub fn managed_password() -> Option<String> {
+    decode_managed_password(&crate::config::LocalConfig::get_option(MANAGED_PASSWORD_KEY))
+}
+
+fn encode_managed_password(pw: &str) -> String {
+    let pw = pw.trim();
+    if pw.is_empty() {
+        return String::new();
+    }
+    encrypt_str_or_original(pw, "00", MANAGED_PASSWORD_MAX_LEN)
+}
+
+fn decode_managed_password(stored: &str) -> Option<String> {
+    if stored.is_empty() {
+        return None;
+    }
+    let (pw, _decrypted, _) = decrypt_str_or_original(stored, "00");
+    if pw.is_empty() {
+        None
+    } else {
+        Some(pw)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum VerificationMethod {
     OnlyUseTemporaryPassword,
@@ -131,6 +178,7 @@ pub fn permanent_enabled() -> bool {
 
 pub fn has_valid_password() -> bool {
     session_otp().is_some()
+        || managed_password().is_some()
         || temporary_enabled() && !temporary_password().is_empty()
         || permanent_enabled() && Config::has_permanent_password()
 }
@@ -325,6 +373,17 @@ fn open_secretbox_payload(data: &[u8], key: &secretbox::Key) -> Result<Vec<u8>, 
 mod test {
 
     // One test owns the process-global SESSION_OTP, so ordering is deterministic.
+    #[test]
+    fn managed_password_round_trips_and_clears() {
+        let stored = super::encode_managed_password("  fleet-Pw#1 ");
+        assert!(!stored.is_empty());
+        assert_ne!(stored, "fleet-Pw#1", "the managed password is never stored in clear");
+        assert_eq!(super::decode_managed_password(&stored).as_deref(), Some("fleet-Pw#1"));
+        assert_eq!(super::encode_managed_password(""), "");
+        assert_eq!(super::encode_managed_password("   "), "");
+        assert_eq!(super::decode_managed_password(""), None);
+    }
+
     #[test]
     fn session_otp_lifecycle() {
         use super::*;

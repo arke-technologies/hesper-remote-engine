@@ -369,6 +369,9 @@ pub enum Data {
     /// upstream protocol; an older binary that doesn't know this variant simply
     /// fails to deserialize the frame and ignores it.
     SetSessionOtp(String),
+    /// Hesper: the hub-issued managed fleet password, into its own slot
+    /// (`password::set_managed_password`). Never the permanent password.
+    SetManagedPassword(String),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     Keyboard(DataKeyboard),
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -1171,6 +1174,16 @@ async fn handle(data: Data, stream: &mut Connection) {
                     .await
             );
         }
+        Data::SetManagedPassword(pw) => {
+            // Its own persisted slot, beside the operator's permanent password: setting
+            // or clearing it never touches the permanent password, the temporary
+            // password, verification-method or approve-mode (TK, 2026-11-21).
+            hbb_common::password_security::set_managed_password(&pw);
+            log::info!(
+                "managed fleet password {} via IPC",
+                if pw.trim().is_empty() { "cleared" } else { "set" }
+            );
+        }
         Data::SetSessionOtp(otp) => {
             // A5.1: store the agent-injected per-session OTP in the DEDICATED
             // session-OTP slot (`password::set_session_otp`), which the connect flow
@@ -1588,6 +1601,12 @@ pub fn update_temporary_password() -> ResultType<()> {
 // that shares its peer id. Mirrors the existing `set_data`-based sender path.
 pub fn set_session_otp(otp: String) -> ResultType<()> {
     set_data(&Data::SetSessionOtp(otp))
+}
+
+// Hesper: send the managed fleet password to the running daemon's own slot (see the
+// `Data::SetManagedPassword` handler). Used by the `--set-managed-password` verb.
+pub fn set_managed_password(pw: String) -> ResultType<()> {
+    set_data(&Data::SetManagedPassword(pw))
 }
 
 fn apply_permanent_password_storage_and_salt_payload(payload: Option<&str>) -> ResultType<()> {
