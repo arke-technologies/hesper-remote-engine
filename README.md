@@ -1,8 +1,8 @@
 # Hesper Remote — auto-update manifests
 
-Last run: **1.5.39** (each platform moves only once its own asset is published).
+Last run: **1.5.40** (each platform moves only once its own asset is published).
 
-- `linux-x86_64`: 1.5.39
+- `linux-x86_64`: 1.5.40
 - `macos-x86_64`: 1.5.39
 - `macos-aarch64`: 1.5.39
 - `windows-x86_64`: 1.5.39
