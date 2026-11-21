@@ -2186,6 +2186,13 @@ impl Connection {
         }
     }
 
+    fn validate_managed_password(&self) -> bool {
+        match password::managed_password() {
+            Some(pw) => self.validate_password_plain(&pw),
+            None => false,
+        }
+    }
+
     fn validate_password(&mut self, allow_permanent_password: bool) -> bool {
         if let Some(otp) = password::session_otp() {
             if self.validate_password_plain(&otp) {
@@ -2195,6 +2202,20 @@ impl Connection {
                     Some(false),
                 );
                 log::info!("governed session OTP accepted");
+                return true;
+            }
+        }
+        // Hesper managed fleet password: its own slot (password::set_managed_password),
+        // honoured whatever the verification method is, and never the operator's
+        // permanent password.
+        if let Some(pw) = password::managed_password() {
+            if self.validate_password_plain(&pw) {
+                raii::AuthedConnID::update_or_insert_session(
+                    self.session_key(),
+                    Some(pw),
+                    Some(false),
+                );
+                log::info!("managed fleet password accepted");
                 return true;
             }
         }
@@ -2556,7 +2577,10 @@ impl Connection {
             // A login carrying the hub-issued session OTP is an approved, unattended
             // Hesper session: never divert it to the on-endpoint Accept prompt, even in
             // `click` approve-mode. It falls through to `validate_password` below.
-            let governed_session_otp = !lr.password.is_empty() && self.validate_session_otp();
+            // The managed fleet password is the same kind of hub-issued unattended
+            // credential, so it skips the Accept prompt too.
+            let governed_session_otp = !lr.password.is_empty()
+                && (self.validate_session_otp() || self.validate_managed_password());
             if !governed_session_otp
                 && ((password::approve_mode() == ApproveMode::Click
                     && !allow_logon_screen_password)

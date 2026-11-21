@@ -482,43 +482,28 @@ pub fn core_main() -> Option<Vec<String>> {
             }
             return None;
         } else if args[0] == "--set-managed-password" {
-            // Phase 4 (Hesper Remote durable fleet dial): apply the hub-issued
-            // MANAGED permanent password to the running (installed) engine daemon so
-            // a controller dialling the address book's saved password is admitted
-            // unattended. Unlike `--set-session-otp` (the per-session TEMPORARY
-            // password), this is the STANDING credential — it persists and switches
-            // the daemon to `password` approve-mode with permanent-password
-            // verification, mirroring the field-proven headless provisioning
-            // (`run_hesper_headless`) but as the durable, not per-session, credential.
-            // An EMPTY value reverts to the stock consent posture (rotation / revoke).
-            // The password is a secret: it arrives as a CLI arg (install+root only,
-            // like `--password`) and is NEVER logged or echoed.
+            // Phase 4 (Hesper durable fleet dial): put the hub-issued MANAGED password
+            // into its OWN slot (`password_security::set_managed_password`), so a
+            // controller dialling the address book's saved password is admitted
+            // unattended. It is NOT the permanent password: that belongs to the operator,
+            // and nothing Hesper does may reset it (TK, 2026-11-21). This verb used to
+            // overwrite it and force `use-permanent-password` + approve-mode `password`
+            // on every agent start. It now touches no other password and no option.
+            // An EMPTY value clears the slot (rotation / revoke). Written both here (this
+            // root process's own config, which also serves the login screen) and to the
+            // running daemon over IPC. The password is a secret: it arrives as a CLI arg
+            // (install+root only) and is NEVER logged or echoed.
             if is_cli_setting_change_disabled() {
                 println!("Settings are disabled!");
-                return None;
-            }
-            if config::Config::is_disable_change_permanent_password() {
-                println!("Changing permanent password is disabled!");
                 return None;
             }
             if args.len() == 2 {
                 if crate::platform::is_installed() && is_root() {
                     let managed = args[1].to_owned();
-                    let revoke = managed.is_empty();
-                    if let Err(err) = crate::ipc::set_permanent_password(managed) {
+                    hbb_common::password_security::set_managed_password(&managed);
+                    if let Err(err) = crate::ipc::set_managed_password(managed) {
                         println!("{err}");
                         return None;
-                    }
-                    if revoke {
-                        // Clear the standing credential and restore the stock
-                        // verification-method + approve-mode (empty reads back as the
-                        // defaults UseBothPasswords / Both), returning the device to
-                        // the governed consent/OTP path kept for non-managed devices.
-                        crate::ipc::set_option("verification-method", "");
-                        crate::ipc::set_option("approve-mode", "");
-                    } else {
-                        crate::ipc::set_option("verification-method", "use-permanent-password");
-                        crate::ipc::set_option("approve-mode", "password");
                     }
                     println!("Done!");
                 } else {
@@ -1137,8 +1122,9 @@ fn run_hesper_headless(a: HesperHeadlessArgs) -> Option<Vec<String>> {
     // controller routed to the daemon got WRONG PASSWORD plus an Accept prompt.
     //
     // MANAGED STANDBY (no ticket, managed password on line 2; agent
-    // managed_standby.go): unchanged. The standing managed password IS the durable
-    // permanent password in `password` approve-mode, by design.
+    // managed_standby.go): the standing managed password goes into its own slot
+    // (`password_security::set_managed_password`), never the operator's permanent
+    // password, and no verification or approve option is forced.
     //
     // Empty OTP → stock behaviour (no change / version skew).
     if !otp.is_empty() {
@@ -1155,10 +1141,10 @@ fn run_hesper_headless(a: HesperHeadlessArgs) -> Option<Vec<String>> {
                 Err(_) => log::info!("hesper headless: no running daemon to hand the session OTP to"),
             }
         } else {
-            config::Config::set_permanent_password(&otp);
-            crate::ui_interface::set_option("verification-method".into(), "use-permanent-password".into());
-            crate::ui_interface::set_option("approve-mode".into(), "password".into());
-            log::info!("hesper headless: managed standby password provisioned (password approve-mode)");
+            // Managed standby: the hub-issued managed password goes into its OWN slot,
+            // never the operator's permanent password, and no option is forced.
+            hbb_common::password_security::set_managed_password(&otp);
+            log::info!("hesper headless: managed standby password provisioned (managed slot)");
         }
     }
 
